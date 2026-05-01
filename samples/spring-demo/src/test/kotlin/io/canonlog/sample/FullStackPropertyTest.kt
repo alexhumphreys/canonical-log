@@ -65,10 +65,23 @@ private fun arbAction(maxDepth: Int): Arb<Action> {
     )
 }
 
+private data class BootedApp(val ctx: ConfigurableApplicationContext, val port: Int)
+
+private fun bootApp(virtualThreads: Boolean, label: String): BootedApp {
+    val ctx = SpringApplication.run(
+        Application::class.java,
+        "--server.port=0",
+        "--spring.threads.virtual.enabled=$virtualThreads",
+        "--spring.datasource.url=jdbc:h2:mem:canonlog-prop-$label;DB_CLOSE_DELAY=-1",
+    )
+    val port = ctx.environment.getProperty("local.server.port", Int::class.java)!!
+    return BootedApp(ctx, port)
+}
+
 class FullStackPropertyTest : DescribeSpec({
 
-    var ctx: ConfigurableApplicationContext? = null
-    var port: Int = 0
+    var virtual: BootedApp? = null
+    var platform: BootedApp? = null
     var appender: ListAppender<ILoggingEvent> = ListAppender()
     val client = OkHttpClient.Builder()
         .callTimeout(10, TimeUnit.SECONDS)
@@ -76,8 +89,8 @@ class FullStackPropertyTest : DescribeSpec({
 
     beforeSpec {
         PropertyTesting.defaultIterationCount = 100
-        ctx = SpringApplication.run(Application::class.java, "--server.port=0")
-        port = ctx!!.environment.getProperty("local.server.port", Int::class.java)!!
+        virtual = bootApp(virtualThreads = true, label = "virtual")
+        platform = bootApp(virtualThreads = false, label = "platform")
 
         appender = ListAppender<ILoggingEvent>().also { it.start() }
         val canonicalLogger = LoggerFactory.getLogger("canonical") as LogbackLogger
@@ -87,31 +100,34 @@ class FullStackPropertyTest : DescribeSpec({
 
     afterSpec {
         (LoggerFactory.getLogger("canonical") as LogbackLogger).detachAppender(appender)
-        ctx?.close()
+        virtual?.ctx?.close()
+        platform?.ctx?.close()
     }
 
-    describe("Full-stack property: arbitrary plan executed via real Spring + filter + bridge") {
+    listOf("virtual" to { virtual!! }, "platform" to { platform!! }).forEach { (modeName, app) ->
+        describe("Full-stack property on $modeName threads") {
 
-        it("every increment in a random plan lands in the canonical log line for that request") {
-            checkAll(arbAction(maxDepth = 3)) { plan ->
-                appender.list.clear()
+            it("every increment in a random plan lands in the canonical log line for that request") {
+                checkAll(arbAction(maxDepth = 3)) { plan ->
+                    appender.list.clear()
 
-                val body = mapper.writeValueAsString(plan).toRequestBody("application/json".toMediaType())
-                val req = Request.Builder()
-                    .url("http://localhost:$port/property/run")
-                    .post(body)
-                    .build()
+                    val body = mapper.writeValueAsString(plan).toRequestBody("application/json".toMediaType())
+                    val req = Request.Builder()
+                        .url("http://localhost:${app().port}/property/run")
+                        .post(body)
+                        .build()
 
-                client.newCall(req).execute().use { resp ->
-                    resp.code shouldBe 200
+                    client.newCall(req).execute().use { resp ->
+                        resp.code shouldBe 200
+                    }
+
+                    val snap = lastCanonicalSnapshot(appender)!!
+                    snap["http_route"] shouldBe "/property/run"
+                    snap["http_response_status_code"] shouldBe 200L
+
+                    val expected = collectExpected(plan)
+                    expected.forEach { (k, v) -> snap[k] shouldBe v }
                 }
-
-                val snap = lastCanonicalSnapshot(appender)!!
-                snap["http_route"] shouldBe "/property/run"
-                snap["http_response_status_code"] shouldBe 200L
-
-                val expected = collectExpected(plan)
-                expected.forEach { (k, v) -> snap[k] shouldBe v }
             }
         }
     }

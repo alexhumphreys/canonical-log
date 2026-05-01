@@ -1,5 +1,7 @@
 # canonlog
 
+[![CI](https://github.com/alexhumphreys/canonlog/actions/workflows/ci.yml/badge.svg)](https://github.com/alexhumphreys/canonlog/actions/workflows/ci.yml)
+
 Stripe-style [canonical log lines](https://stripe.com/blog/canonical-log-lines) for JVM services. One wide, structured log line per unit of work, contributed to mechanically by HTTP, JDBC, and OkHttp instrumentation, augmented explicitly by handler code via a tiny API.
 
 > Status: **0.1, experimental.** Expect breaking changes.
