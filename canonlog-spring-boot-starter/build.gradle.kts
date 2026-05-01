@@ -16,4 +16,5 @@ dependencies {
     implementation(libs.logstash.logback.encoder)
 
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.kotest.property)
 }

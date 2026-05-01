@@ -1,0 +1,136 @@
+package io.canonlog.spring
+
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger as LogbackLogger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
+import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.shouldBe
+import jakarta.servlet.FilterChain
+import net.logstash.logback.marker.MapEntriesAppendingMarker
+import org.slf4j.LoggerFactory
+import org.slf4j.Marker
+import org.springframework.mock.web.MockAsyncContext
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+
+private fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any>? {
+    val event = appender.list.lastOrNull { it.loggerName == "canonical" } ?: return null
+    val args: Array<out Any?> = event.argumentArray ?: emptyArray()
+    val markers: List<Any> = (event.markerList ?: emptyList<Marker>()) + args.filterNotNull()
+    return markers.filterIsInstance<MapEntriesAppendingMarker>()
+        .map { marker ->
+            val mapField = generateSequence<Class<*>>(marker::class.java) { it.superclass }
+                .firstNotNullOfOrNull { cls ->
+                    cls.declaredFields.firstOrNull { f ->
+                        Map::class.java.isAssignableFrom(f.type)
+                    }
+                } ?: error("no map field on ${marker::class.java}")
+            mapField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            mapField.get(marker) as Map<String, Any>
+        }
+        .fold(emptyMap<String, Any>()) { acc, m -> acc + m }
+}
+
+private fun attachAppender(): ListAppender<ILoggingEvent> {
+    val appender = ListAppender<ILoggingEvent>().also { it.start() }
+    val logger = LoggerFactory.getLogger("canonical") as LogbackLogger
+    logger.addAppender(appender)
+    logger.level = Level.INFO
+    return appender
+}
+
+private fun detachAppender(appender: ListAppender<ILoggingEvent>) {
+    (LoggerFactory.getLogger("canonical") as LogbackLogger).detachAppender(appender)
+}
+
+class CanonicalLogFilterTest : DescribeSpec({
+
+    describe("CanonicalLogFilter") {
+
+        it("emits exactly one canonical line for a synchronous handler") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/sync")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                CanonicalLogFilter().doFilter(req, res) { _, _ -> }
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+                val snap = lastCanonicalSnapshot(appender)
+                snap?.get("http_route") shouldBe "/sync"
+                snap?.get("http_response_status_code") shouldBe 200L
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("defers emit until AsyncContext completes for an async handler") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/async").apply { isAsyncSupported = true }
+                val res = MockHttpServletResponse().apply { status = 200 }
+
+                val chain = FilterChain { _, _ -> req.startAsync(req, res) }
+
+                CanonicalLogFilter().doFilter(req, res, chain)
+
+                // Filter returned, but the handler is still "running" async — no emit yet.
+                appender.list.count { it.loggerName == "canonical" } shouldBe 0
+
+                // Simulate the async handler finishing.
+                (req.asyncContext as MockAsyncContext).complete()
+
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+                val snap = lastCanonicalSnapshot(appender)
+                snap?.get("http_route") shouldBe "/async"
+                snap?.get("http_response_status_code") shouldBe 200L
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("clears the threadlocal after a synchronous request") {
+            val req = MockHttpServletRequest("GET", "/sync")
+            val res = MockHttpServletResponse().apply { status = 200 }
+            CanonicalLogFilter().doFilter(req, res) { _, _ -> }
+            io.canonlog.currentCanonicalContext() shouldBe null
+        }
+
+        it("clears the threadlocal after an async request even though emit is deferred") {
+            val req = MockHttpServletRequest("GET", "/async").apply { isAsyncSupported = true }
+            val res = MockHttpServletResponse().apply { status = 200 }
+            val chain = jakarta.servlet.FilterChain { _, _ -> req.startAsync(req, res) }
+            CanonicalLogFilter().doFilter(req, res, chain)
+            // Filter has returned; servlet thread must be empty even though the work unit
+            // is still alive and waiting for AsyncListener.onComplete.
+            io.canonlog.currentCanonicalContext() shouldBe null
+        }
+
+        it("clears the threadlocal even when the handler throws") {
+            val req = MockHttpServletRequest("GET", "/boom")
+            val res = MockHttpServletResponse().apply { status = 500 }
+            runCatching {
+                CanonicalLogFilter().doFilter(req, res) { _, _ -> error("kaboom") }
+            }
+            io.canonlog.currentCanonicalContext() shouldBe null
+        }
+
+        it("emits exactly once when a synchronous handler throws") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/boom")
+                val res = MockHttpServletResponse().apply { status = 500 }
+                val ex = runCatching {
+                    CanonicalLogFilter().doFilter(req, res) { _, _ -> error("kaboom") }
+                }.exceptionOrNull()
+                (ex is IllegalStateException) shouldBe true
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+                val snap = lastCanonicalSnapshot(appender)
+                snap?.get("error") shouldBe true
+                snap?.get("error_class") shouldBe "java.lang.IllegalStateException"
+            } finally {
+                detachAppender(appender)
+            }
+        }
+    }
+})
