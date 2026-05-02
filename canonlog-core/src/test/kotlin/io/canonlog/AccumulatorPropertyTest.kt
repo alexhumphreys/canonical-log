@@ -59,8 +59,11 @@ class AccumulatorPropertyTest : DescribeSpec({
                 snap.keys shouldBe expected.keys
             }
         }
+    }
 
-        it("bridge resilience: every contribution in an arbitrary nested coroutine structure lands in the snapshot") {
+    describe("Bridge propagation invariants") {
+
+        it("every contribution in an arbitrary nested coroutine structure lands in the snapshot") {
             checkAll(arbAction(maxDepth = 3)) { plan ->
                 var snap: Map<String, Any> = emptyMap()
                 runBlocking {
@@ -92,6 +95,16 @@ private sealed class Action {
     data class InScope(val child: Action) : Action()
     data class FanOut(val branches: List<Action>) : Action()
     data class AsyncAwait(val on: Dispatcher, val child: Action) : Action()
+    /**
+     * Bare `async { ... }` against the parent scope, with no wrapping `coroutineScope`.
+     * This exercises the path that broke in the recent regression where
+     * [withCanonicalLog]'s block lost its `CoroutineScope` receiver — without the
+     * receiver, bare `async` resolves to the test runner's outer scope (which has
+     * no canonical element), and contributions inside silently vanish. With the
+     * receiver, bare `async` resolves to the entry-point's own scope, which carries
+     * the canonical element. This variant ensures we keep covering that path.
+     */
+    data class BareAsync(val on: Dispatcher, val child: Action) : Action()
 }
 
 private enum class Dispatcher { IO, DEFAULT, UNCONFINED }
@@ -117,8 +130,9 @@ private fun arbAction(maxDepth: Int): Arb<Action> {
     val inScope: Arb<Action> = child.map { Action.InScope(it) }
     val fanOut: Arb<Action> = Arb.list(child, 1..4).map { Action.FanOut(it) }
     val asyncAwait: Arb<Action> = Arb.bind(dispatchers, child) { d, c -> Action.AsyncAwait(d, c) }
+    val bareAsync: Arb<Action> = Arb.bind(dispatchers, child) { d, c -> Action.BareAsync(d, c) }
 
-    return Arb.choice(leaf, sequential, withSwitch, inScope, fanOut, asyncAwait)
+    return Arb.choice(leaf, sequential, withSwitch, inScope, fanOut, asyncAwait, bareAsync)
 }
 
 private suspend fun runAction(action: Action, scope: CoroutineScope) {
@@ -143,6 +157,11 @@ private suspend fun runAction(action: Action, scope: CoroutineScope) {
             val d = async(action.on.asCoroutineDispatcher()) { runAction(action.child, this) }
             d.await()
         }
+
+        is Action.BareAsync -> {
+            val d = scope.async(action.on.asCoroutineDispatcher()) { runAction(action.child, this) }
+            d.await()
+        }
     }
 }
 
@@ -156,6 +175,7 @@ private fun collectExpected(action: Action): Map<String, Long> {
             is Action.InScope -> walk(a.child)
             is Action.FanOut -> a.branches.forEach(::walk)
             is Action.AsyncAwait -> walk(a.child)
+            is Action.BareAsync -> walk(a.child)
         }
     }
     walk(action)

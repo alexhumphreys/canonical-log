@@ -25,9 +25,10 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
 
     /**
      * Mark this work unit as failed. Sets `error=true` and `error_reason=<reason>`,
-     * plus any extra fields the caller supplies. Idempotent — last call wins.
+     * plus any extra fields the caller supplies. Null-valued extras are dropped,
+     * matching [put]. Idempotent — last call wins.
      */
-    public fun markFailed(reason: String, vararg extras: Pair<String, Any>) {
+    public fun markFailed(reason: String, vararg extras: Pair<String, Any?>) {
         put("error", true)
         put("error_reason", reason)
         extras.forEach { (k, v) -> put(k, v) }
@@ -36,13 +37,20 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     /**
      * Mark this work unit as degraded — succeeded but with caveats. Sets
      * `degraded=true` and `degraded_reason=<reason>`, plus any extra fields.
-     * Does not set `error`.
+     * Null-valued extras are dropped. Does not set `error`.
      */
-    public fun markDegraded(reason: String, vararg extras: Pair<String, Any>) {
+    public fun markDegraded(reason: String, vararg extras: Pair<String, Any?>) {
         put("degraded", true)
         put("degraded_reason", reason)
         extras.forEach { (k, v) -> put(k, v) }
     }
 
+    /**
+     * Return a defensive copy of the current fields. The copy is shallow: mutable
+     * values stored via [put] (e.g. lists) are shared by reference. In practice the
+     * values are primitives, strings, or otherwise immutable, so this is a non-issue —
+     * but if a caller stores a mutable value and mutates it after `snapshot()`, the
+     * mutation is visible through the snapshot.
+     */
     public fun snapshot(): Map<String, Any> = HashMap(fields)
 }

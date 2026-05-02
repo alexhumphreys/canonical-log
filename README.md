@@ -174,9 +174,6 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 
 The v0.1 POC is for validating the kernel; everything else lands as feedback informs design.
 
-## Tech
+## Testing
 
-- Kotlin 2.2.20, JDK 25 (toolchain), JVM 21 bytecode (broad runtime compatibility)
-- Spring Boot 4.0.6, Spring Framework 7.0
-- Gradle 9.5.0
-- 69 tests across kernel + contributors + starters + sample, including 4 property tests (random concurrent contributions, arbitrary nested coroutine structures, async-listener callback orderings, and full-stack random plans through real Spring on both virtual and platform threads)
+The kernel's invariants are pinned with property tests rather than worked examples: random concurrent contributions against the accumulator, arbitrary nested coroutine structures (`withContext` / `async` / `coroutineScope` / bare `async`) against the bridge, randomized servlet async-listener callback orderings against the filter, and full-stack random plans through a real Spring Boot app on both virtual and platform threads.

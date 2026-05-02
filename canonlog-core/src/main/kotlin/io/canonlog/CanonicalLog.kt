@@ -21,11 +21,11 @@ public object CanonicalLog {
         threadLocalContext.get()?.increment(key, by)
     }
 
-    public fun markFailed(reason: String, vararg extras: Pair<String, Any>) {
+    public fun markFailed(reason: String, vararg extras: Pair<String, Any?>) {
         threadLocalContext.get()?.markFailed(reason, *extras)
     }
 
-    public fun markDegraded(reason: String, vararg extras: Pair<String, Any>) {
+    public fun markDegraded(reason: String, vararg extras: Pair<String, Any?>) {
         threadLocalContext.get()?.markDegraded(reason, *extras)
     }
 }

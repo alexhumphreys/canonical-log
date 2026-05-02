@@ -24,6 +24,7 @@ public fun currentCanonicalContext(): CanonicalLogContext? = threadLocalContext.
  * that opens the work unit before chain dispatch and emits asynchronously after
  * the response completes).
  */
+@DelicateCanonicalLogApi
 public fun bindCurrentCanonicalContext(context: CanonicalLogContext?): CanonicalLogContext? {
     val previous = threadLocalContext.get()
     threadLocalContext.set(context)

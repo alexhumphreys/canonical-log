@@ -4,6 +4,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
+/**
+ * The hand-off the entry point uses to publish the finalized canonical line.
+ *
+ * **`emit` must not throw.** By the time it runs, the work unit is already finalized
+ * — the block returned (or threw), the adapter's `enrich` ran, and the threadlocal
+ * has been restored. A throwing emit is a wiring bug at the entry-point level (the
+ * canonical sink itself failed). The library does not attempt to recover: the
+ * exception propagates out of `withCanonicalLog{,Blocking}` and replaces the block's
+ * result. If the block had already thrown, the emit exception will replace *that*
+ * (unhelpfully) — so keep emit implementations dead simple.
+ */
 public typealias EmitFn = (CanonicalLogContext) -> Unit
 
 /**
@@ -44,7 +55,18 @@ public fun <T, R> withCanonicalLogBlocking(
     val previous = threadLocalContext.get()
     threadLocalContext.set(ctx)
     val startNs = System.nanoTime()
-    val blockResult: Result<R> = runCatching { block(ctx) }
+    // We catch Exception, not Throwable: Error subclasses (OOM, StackOverflow, etc.)
+    // mean the JVM is in an unrecoverable state and trying to enrich/emit on top of
+    // that is more likely to obscure the failure than to help. Restore the threadlocal
+    // and let it propagate.
+    val blockResult: Result<R> = try {
+        Result.success(block(ctx))
+    } catch (e: Exception) {
+        Result.failure(e)
+    } catch (t: Throwable) {
+        threadLocalContext.set(previous)
+        throw t
+    }
     val outcome = blockResult.fold(
         onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
         onFailure = { Outcome.Threw(elapsedMs(startNs), it) },
@@ -70,6 +92,14 @@ public fun <T, R> withCanonicalLogBlocking(
  * Calling this inside an already-active work unit is **undefined**. Nested work
  * units are not yet supported (see CLAUDE.md).
  *
+ * **Threadlocal restoration:** unlike [withCanonicalLogBlocking], this variant does
+ * not explicitly capture and restore a previous threadlocal binding around the block.
+ * Restoration is delegated to the [CanonicalLogElement] `ThreadContextElement`
+ * (`updateThreadContext`/`restoreThreadContext`), which is correct for the supported
+ * case (a top-level entry from suspend code, where there is no prior threadlocal
+ * binding on the dispatching thread). For the unsupported nested case, behaviour
+ * diverges from the blocking variant — but nesting is undefined regardless.
+ *
  * Adapter exception handling matches [withCanonicalLogBlocking].
  */
 @OptIn(DelicateCanonicalLogApi::class)
@@ -82,7 +112,14 @@ public suspend fun <T, R> withCanonicalLog(
     val ctx = CanonicalLogContext(adapter.describe(input))
     val startNs = System.nanoTime()
     return withContext(CanonicalLogElement(ctx)) {
-        val blockResult: Result<R> = runCatching { block(ctx) }
+        // See [withCanonicalLogBlocking] for the rationale: Errors propagate; only
+        // Exceptions become Outcome.Threw. The ThreadContextElement still cleans up
+        // its threadlocal binding when the block escapes via Error.
+        val blockResult: Result<R> = try {
+            Result.success(block(ctx))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
         val outcome = blockResult.fold(
             onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
             onFailure = { Outcome.Threw(elapsedMs(startNs), it) },

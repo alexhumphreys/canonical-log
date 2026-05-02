@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.Job
 
 private val nullAdapter = object : WorkUnitAdapter<String> {
     override fun describe(input: String): WorkUnit = WorkUnit(input, "test", Instant.now())
@@ -116,7 +117,7 @@ class BridgeContractTest : DescribeSpec({
             snap["back_in_a"] shouldBe "yes"
         }
 
-        it("6. Orphaned launch outliving parent: post-emit contributions are NOT in the snapshot") {
+        it("6. Snapshot is a hard cutoff: writes after emit do not retroactively appear") {
             var snap: Map<String, Any> = emptyMap()
             val parentEmitted = CompletableDeferred<Unit>()
             val launchRanAndWrote = CompletableDeferred<Unit>()
@@ -132,12 +133,13 @@ class BridgeContractTest : DescribeSpec({
                             parentEmitted.complete(Unit)
                         },
                     ) {
-                        // Launch with the canonical context so the orphan can still find the
-                        // accumulator after the parent's withContext has returned. The point
-                        // is to verify that snapshot capture is a hard cutoff: late writes
-                        // mutate the still-live context but do NOT retroactively appear in
-                        // the emitted snapshot.
-                        external.launch(coroutineContext) {
+                        // Inherit the canonical element so the orphan can still find the
+                        // accumulator after the parent's withContext has returned, but
+                        // strip the Job so the parent does not structurally wait for the
+                        // launched coroutine. The point is to verify that snapshot
+                        // capture is a hard cutoff: late writes mutate the still-live
+                        // context but do NOT retroactively appear in the emitted snapshot.
+                        external.launch(coroutineContext.minusKey(Job)) {
                             parentEmitted.await()
                             CanonicalLog.put("late", "yes")
                             launchRanAndWrote.complete(Unit)
@@ -171,6 +173,20 @@ class BridgeContractTest : DescribeSpec({
                 }
             }
             (1..5).forEach { i -> snap["child_$i"] shouldBe "yes" }
+        }
+
+        it("8. Sharing: a child async's awaited contribution is in the parent's snapshot") {
+            var snap: Map<String, Any> = emptyMap()
+            runTest {
+                withCanonicalLog(nullAdapter, "wu", { snap = it.snapshot() }) {
+                    val deferred = async(Dispatchers.IO) {
+                        CanonicalLog.increment("child_count", 7L)
+                        "child_returned"
+                    }
+                    deferred.await() shouldBe "child_returned"
+                }
+            }
+            snap["child_count"] shouldBe 7L
         }
 
         it("9. Blocking-entry → suspend bridge: withCanonicalCoroutineContext lifts the threadlocal binding into a coroutine context that survives dispatcher switches") {
@@ -231,20 +247,6 @@ class BridgeContractTest : DescribeSpec({
             snap["on_io_before_throw"] shouldBe "yes"
             // Threadlocal must be cleaned up after withCanonicalLogBlocking unwound.
             threadLocalContext.get() shouldBe null
-        }
-
-        it("8. Sharing: a child async's awaited contribution is in the parent's snapshot") {
-            var snap: Map<String, Any> = emptyMap()
-            runTest {
-                withCanonicalLog(nullAdapter, "wu", { snap = it.snapshot() }) {
-                    val deferred = async(Dispatchers.IO) {
-                        CanonicalLog.increment("child_count", 7L)
-                        "child_returned"
-                    }
-                    deferred.await() shouldBe "child_returned"
-                }
-            }
-            snap["child_count"] shouldBe 7L
         }
     }
 })

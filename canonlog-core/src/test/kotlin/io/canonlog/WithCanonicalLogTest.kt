@@ -140,6 +140,41 @@ class WithCanonicalLogTest : DescribeSpec({
             currentCanonicalContext() shouldBe null
         }
 
+        it("a throwing emit (blocking variant) propagates and the threadlocal is still restored") {
+            val emitEx = IllegalStateException("emit blew up")
+            val ex = runCatching {
+                withCanonicalLogBlocking<String, String>(nullAdapter, "wu", { throw emitEx }) { "ok" }
+            }.exceptionOrNull()
+
+            ex shouldBe emitEx
+            // Threadlocal is restored before emit runs, so even a throwing emit leaves
+            // it clean — pinning this so a future refactor that moves the restore
+            // doesn't silently regress.
+            threadLocalContext.get() shouldBe null
+        }
+
+        it("Error from block propagates without being captured: no enrich, no emit, threadlocal restored") {
+            val adapter = object : WorkUnitAdapter<String> {
+                var enrichCalls = 0
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
+                    enrichCalls++
+                }
+            }
+            val emitCount = AtomicInteger()
+
+            val ex = runCatching {
+                withCanonicalLogBlocking<String, Unit>(adapter, "wu", { emitCount.incrementAndGet() }) {
+                    throw OutOfMemoryError("simulated")
+                }
+            }.exceptionOrNull()
+
+            ex.shouldBeInstanceOf<OutOfMemoryError>()
+            adapter.enrichCalls shouldBe 0
+            emitCount.get() shouldBe 0
+            threadLocalContext.get() shouldBe null
+        }
+
         it("if both block and adapter.enrich throw, block exception is primary; enrich captured on the canonical line") {
             var snap: Map<String, Any> = emptyMap()
             val blockEx = IllegalArgumentException("block blew up")
@@ -229,6 +264,18 @@ class WithCanonicalLogTest : DescribeSpec({
             }
             adapter.enrichCalls shouldBe 1
             emitCount.get() shouldBe 1
+        }
+
+        it("a throwing emit (suspend variant) propagates and the threadlocal is still restored") {
+            val emitEx = IllegalStateException("emit blew up")
+            val ex = runCatching {
+                runBlocking {
+                    withCanonicalLog<String, String>(nullAdapter, "wu", { throw emitEx }) { "ok" }
+                }
+            }.exceptionOrNull()
+
+            ex shouldBe emitEx
+            threadLocalContext.get() shouldBe null
         }
 
         it("if both block and adapter.enrich throw in the suspend variant, block exception is primary; enrich captured on the canonical line") {
