@@ -177,3 +177,7 @@ The v0.1 POC is for validating the kernel; everything else lands as feedback inf
 ## Testing
 
 The kernel's invariants are pinned with property tests rather than worked examples: random concurrent contributions against the accumulator, arbitrary nested coroutine structures (`withContext` / `async` / `coroutineScope` / bare `async`) against the bridge, randomized servlet async-listener callback orderings against the filter, and full-stack random plans through a real Spring Boot app on both virtual and platform threads.
+
+## License
+
+[Apache License 2.0](LICENSE).
