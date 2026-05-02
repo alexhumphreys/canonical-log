@@ -16,6 +16,7 @@ private val capturingAdapter = object : WorkUnitAdapter<String> {
     }
 }
 
+@OptIn(DelicateCanonicalLogApi::class)
 class OutcomeMarkersTest : DescribeSpec({
 
     describe("markFailed") {

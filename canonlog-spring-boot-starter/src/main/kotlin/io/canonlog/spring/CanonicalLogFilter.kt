@@ -1,6 +1,7 @@
 package io.canonlog.spring
 
 import io.canonlog.CanonicalLogContext
+import io.canonlog.DelicateCanonicalLogApi
 import io.canonlog.Outcome
 import io.canonlog.bindCurrentCanonicalContext
 import jakarta.servlet.AsyncEvent
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Single-emit invariant: an [AtomicBoolean] guard ensures at most one canonical
  * line per request, even if both `onError` and `onComplete` fire on the listener.
  */
+@OptIn(DelicateCanonicalLogApi::class)
 public class CanonicalLogFilter : OncePerRequestFilter() {
     private val canonicalLogger = LoggerFactory.getLogger("canonical")
     private val adapter = HttpWorkUnitAdapter()

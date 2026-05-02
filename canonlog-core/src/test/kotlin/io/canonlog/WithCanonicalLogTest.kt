@@ -24,6 +24,7 @@ private fun nestedHelper(value: String) {
     CanonicalLog.put("nested_field", value)
 }
 
+@OptIn(DelicateCanonicalLogApi::class)
 class WithCanonicalLogTest : DescribeSpec({
 
     describe("withCanonicalLogBlocking") {

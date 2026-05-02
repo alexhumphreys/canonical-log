@@ -1,12 +1,14 @@
 package io.canonlog.spring
 
 import io.canonlog.CanonicalLogContext
+import io.canonlog.DelicateCanonicalLogApi
 import io.canonlog.Outcome
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 
+@OptIn(DelicateCanonicalLogApi::class)
 private fun ctx(): CanonicalLogContext = CanonicalLogContext(
     io.canonlog.WorkUnit("wu-1", "http", java.time.Instant.now()),
 )
@@ -24,6 +26,7 @@ private fun exchange(
     return HttpExchange(req, res)
 }
 
+@OptIn(DelicateCanonicalLogApi::class)
 class HttpWorkUnitAdapterTest : DescribeSpec({
 
     val adapter = HttpWorkUnitAdapter()
@@ -93,6 +96,20 @@ class HttpWorkUnitAdapterTest : DescribeSpec({
             s["error"] shouldBe true
             s["error_class"] shouldBe "java.lang.IllegalStateException"
             s["error_reason"] shouldBe "exception"
+            // Status is already 5xx; not overridden.
+            s["http_response_status_code"] shouldBe 500L
+        }
+
+        it("overrides http_response_status_code to 500 when Threw and captured status is still pre-throw default") {
+            val c = ctx()
+            // Exchange status is 200 (the default before the throw); container will set 500
+            // AFTER the filter unwinds, but we don't see that. Adapter corrects.
+            adapter.enrich(c, exchange(status = 200), Outcome.Threw(5L, RuntimeException("boom")))
+
+            val s = c.snapshot()
+            s["http_response_status_code"] shouldBe 500L
+            s["error"] shouldBe true
+            s["error_class"] shouldBe "java.lang.RuntimeException"
         }
 
         it("defers to handler-set error_reason when an exception is thrown") {

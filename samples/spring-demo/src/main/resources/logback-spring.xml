@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <springProperty scope="context" name="serviceName" source="spring.application.name" defaultValue="canonlog-sample"/>
+    <springProperty scope="context" name="environment" source="canonlog.environment" defaultValue="local"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timeZone>UTC</timeZone>
+            <includeContext>false</includeContext>
+            <customFields>{"service_name":"${serviceName}","environment":"${environment}"}</customFields>
+        </encoder>
     </appender>
 
     <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">

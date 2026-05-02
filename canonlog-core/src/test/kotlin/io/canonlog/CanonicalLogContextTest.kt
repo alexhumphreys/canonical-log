@@ -19,6 +19,7 @@ private val testAdapter = object : WorkUnitAdapter<String> {
     }
 }
 
+@OptIn(DelicateCanonicalLogApi::class)
 class CanonicalLogContextTest : DescribeSpec({
     describe("CanonicalLogContext") {
         it("put and increment work on a fresh context") {

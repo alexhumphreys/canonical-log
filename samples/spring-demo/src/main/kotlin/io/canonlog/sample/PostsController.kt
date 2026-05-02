@@ -25,6 +25,16 @@ class PostsController(
     private val upstream: MockWebServer,
 ) {
 
+    @GetMapping("/posts/{id}/explode")
+    fun explode(@PathVariable id: Long): Nothing {
+        CanonicalLog.put("post_id", id)
+        // No markFailed — let the exception flow uncaught so the adapter populates
+        // error_class itself. This demonstrates the third outcome shape:
+        // Outcome.Threw → adapter sets error=true, error_class=<qualifiedName>,
+        // error_reason=exception (default, since no markFailed call).
+        throw RuntimeException("simulated handler crash for post $id")
+    }
+
     @GetMapping("/posts/{id}")
     fun getPost(@PathVariable id: Long): PostResponse {
         CanonicalLog.put("post_id", id)

@@ -2,7 +2,7 @@ package io.canonlog
 
 import java.util.concurrent.ConcurrentHashMap
 
-public class CanonicalLogContext public constructor(
+public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     public val workUnit: WorkUnit,
 ) {
     internal val fields: ConcurrentHashMap<String, Any> = ConcurrentHashMap()

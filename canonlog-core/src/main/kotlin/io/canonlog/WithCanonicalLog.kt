@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 
 public typealias EmitFn = (CanonicalLogContext) -> Unit
 
+@OptIn(DelicateCanonicalLogApi::class)
 public fun <T, R> withCanonicalLogBlocking(
     adapter: WorkUnitAdapter<T>,
     input: T,
@@ -40,6 +41,7 @@ public fun <T, R> withCanonicalLogBlocking(
  * inherits the outer context, which has no canonical element, and contributions from
  * inside the async coroutine are lost.
  */
+@OptIn(DelicateCanonicalLogApi::class)
 public suspend fun <T, R> withCanonicalLog(
     adapter: WorkUnitAdapter<T>,
     input: T,
@@ -77,6 +79,7 @@ public suspend fun <T, R> withCanonicalLog(
  * runs without a canonical context — contributions are silent no-ops, matching the
  * behaviour of [CanonicalLog.put] outside an active work unit.
  */
+@OptIn(DelicateCanonicalLogApi::class)
 public suspend fun <R> withCanonicalCoroutineContext(
     block: suspend CoroutineScope.() -> R,
 ): R {

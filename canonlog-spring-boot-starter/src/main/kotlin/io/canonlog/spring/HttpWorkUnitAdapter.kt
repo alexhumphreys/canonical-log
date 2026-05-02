@@ -37,6 +37,13 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
                 if (current["error_reason"] == null) {
                     ctx.put("error_reason", "exception")
                 }
+                // Uncaught exceptions are mapped to 5xx by the servlet container's outer
+                // valve, but that happens AFTER our filter unwinds. If the captured status
+                // is still the pre-throw default (typically 200), report 500 to match what
+                // the client actually receives.
+                if (input.response.status < STATUS_SERVER_ERROR) {
+                    ctx.put("http_response_status_code", STATUS_SERVER_ERROR.toLong())
+                }
             }
             is Outcome.Completed -> {
                 if (input.response.status >= STATUS_SERVER_ERROR && current["error"] != true) {
