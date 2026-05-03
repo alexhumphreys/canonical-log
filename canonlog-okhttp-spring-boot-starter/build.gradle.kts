@@ -13,5 +13,7 @@ dependencies {
     implementation(libs.spring.boot.autoconfigure)
     implementation(libs.okhttp)
 
+    testImplementation(project(":canonlog-core"))
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }

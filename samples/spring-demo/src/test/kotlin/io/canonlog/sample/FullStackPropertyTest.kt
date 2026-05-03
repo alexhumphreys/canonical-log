@@ -16,35 +16,16 @@ import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.long
 import io.kotest.property.arbitrary.map
 import io.kotest.property.checkAll
-import net.logstash.logback.marker.MapEntriesAppendingMarker
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.slf4j.LoggerFactory
-import org.slf4j.Marker
 import org.springframework.boot.SpringApplication
 import org.springframework.context.ConfigurableApplicationContext
 import java.util.concurrent.TimeUnit
 
 private val mapper: ObjectMapper = ObjectMapper().findAndRegisterModules()
-
-private fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any>? {
-    val event = appender.list.lastOrNull { it.loggerName == "canonical" } ?: return null
-    val args: Array<out Any?> = event.argumentArray ?: emptyArray()
-    val markers: List<Any> = (event.markerList ?: emptyList<Marker>()) + args.filterNotNull()
-    return markers.filterIsInstance<MapEntriesAppendingMarker>()
-        .map { marker ->
-            val mapField = generateSequence<Class<*>>(marker::class.java) { it.superclass }
-                .firstNotNullOfOrNull { cls ->
-                    cls.declaredFields.firstOrNull { f -> Map::class.java.isAssignableFrom(f.type) }
-                } ?: error("no map field on ${marker::class.java}")
-            mapField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            mapField.get(marker) as Map<String, Any>
-        }
-        .fold(emptyMap<String, Any>()) { acc, m -> acc + m }
-}
 
 private fun arbAction(maxDepth: Int): Arb<Action> {
     val keys = Arb.element("a", "b", "c", "d")

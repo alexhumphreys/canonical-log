@@ -18,4 +18,5 @@ dependencies {
 
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.kotest.property)
+    testImplementation(libs.testcontainers.junit.jupiter)
 }

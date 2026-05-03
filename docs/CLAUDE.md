@@ -45,7 +45,7 @@ The accumulator lives for the lifetime of one work unit. Contributors (libraries
 - `canonlog-core` — accumulator, `WorkUnit`, `WorkUnitAdapter`, `Outcome`, `CanonicalLogContext`, the `ThreadContextElement` bridge. Framework-agnostic.
 - `canonlog-okhttp` — OkHttp `Interceptor` that contributes `http_client_request_count`, `http_client_request_duration_ms_total`. Framework-agnostic.
 - `canonlog-jdbc` — `datasource-proxy` `QueryExecutionListener` that contributes `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count`. Framework-agnostic.
-- `canonlog-okhttp-spring-boot-starter` — auto-config wiring the OkHttp contributor.
+- `canonlog-okhttp-spring-boot-starter` — auto-config providing an `OkHttpClientBuilderCustomizer` bean that adopters apply to their own `OkHttpClient.Builder` constructions. **Unlike the HTTP filter and JDBC starters, this one requires adopter participation** because `OkHttpClient` is configured at builder time rather than at bean construction. Opt-out: `canonlog.okhttp.enabled=false`.
 - `canonlog-jdbc-spring-boot-starter` — auto-config wiring the JDBC contributor (uses `@JvmStatic` companion-object `@Bean` for the BeanPostProcessor per Spring's recommendation).
 - `canonlog-spring-boot-starter` — umbrella starter that pulls in the others plus the HTTP request adapter (servlet filter that creates the work unit, captures `http_request_method` / `http_route` / `http_response_status_code` / `http_request_duration_ms`, emits the line).
 - Sample app — exercises everything.
@@ -77,6 +77,8 @@ Suffix conventions:
 - Counts: `long`, `_count` suffix (e.g. `db_query_count`)
 - Sums of durations: `_duration_ms_total` suffix (e.g. `db_execution_duration_ms_total`)
 
+**Duration fields are integer milliseconds.** Suffix is `_ms` (durations) or `_duration_ms_total` (sums). Sub-millisecond operations report `0`; that's acceptable because canonical log lines target request-level work, not microbenchmarks. Integer over floating-point because JSON floats interact badly with downstream consumers — Avro schemas, language-specific parser quirks, visual readability of raw log lines. **If sub-ms granularity becomes necessary, add a `_ns` integer field alongside `_ms` rather than changing `_ms` semantics** — additive, non-breaking, and lets operators who care opt in by querying the new field. This is the migration path; do not propose changing `_ms` to `Double` or to a different unit.
+
 **Schema versioning.** Include `canonical_log_version=v1` in every line.
 
 **Type rules.**
@@ -100,6 +102,14 @@ If you can't explain a proposed contributor in those terms, it probably belongs 
 
 **OTel positioning.** OpenTelemetry is a data model and transport, orthogonal to the canonical log pattern. Ship `canonlog-otel` as an optional sink module later. Do not make OTel a core dependency.
 
+**OkHttp wiring uses a customizer, not a `BeanPostProcessor`.** The HTTP filter and JDBC starters auto-wire transparently — Spring controls when their hook fires (filter chain, bean construction). OkHttp is different: an `OkHttpClient` is configured via builders and its interceptors can't be added after `build()`. Three options were considered:
+
+1. **`BeanPostProcessor` that wraps `OkHttpClient` beans.** To add an interceptor we'd have to call `.newBuilder().addInterceptor(...).build()`, returning a *different instance*. Anyone holding a reference to the original by constructor injection still has the uninstrumented one — silent bugs. Rejected.
+2. **Auto-provide a default `OkHttpClient` bean.** Most non-trivial apps configure their own client (timeouts, dispatcher, cache); a starter-provided default would either be ignored or conflict. Rejected.
+3. **Customizer that adopters apply where they construct the client.** Composes with adopter config and other libraries' customizers, doesn't transform anything behind the user's back, mirrors Spring's own pattern (`RestTemplateCustomizer`, `WebClientCustomizer`). The cost is asymmetry: adopters of the OkHttp starter have one extra step the JDBC and HTTP starters don't require.
+
+The asymmetry is real and called out in the README. Pinned end-to-end by `samples/spring-demo:FullStackEndToEndTest`, which boots the sample against a Testcontainers `mccutchen/go-httpbin` upstream and asserts the customizer-wired call produces `http_client_request_count` in the canonical line.
+
 ## Subtle gotchas
 
 These have already bitten or nearly bitten:
@@ -121,6 +131,7 @@ These have already bitten or nearly bitten:
 - **Virtual threads work end-to-end.** Verified: with `spring.threads.virtual.enabled=true` in `application.properties`, the entire test suite (67 tests) passes, the suspend endpoint runs entirely on virtual threads (`Thread.currentThread().isVirtual == true` on every request entry), and `ab -n 5000 -c 50 -k http://localhost:8080/suspend/posts/1` produces 5000 lines with zero field bleeding. The sample app currently has virtual threads enabled by default. The bridge, filter, accumulator, and contributors all behave identically on virtual and platform threads — the threadlocal abstraction abstracts over both uniformly.
 - **JDBC starter replaces `DataSource` beans with proxies.** `JdbcCanonicalBeanPostProcessor` runs at `Ordered.LOWEST_PRECEDENCE` so it wraps the outermost `DataSource` proxy. Two adopter-visible consequences: (a) injecting by concrete type (`@Autowired private val ds: HikariDataSource`) fails with `BeanNotOfRequiredTypeException` — adopters must inject `DataSource` instead; (b) when another `datasource-proxy` user is on the classpath we add ourselves to the existing chain rather than re-wrap, but if a *non-`datasource-proxy`* tracing wrapper sits above us we proxy that wrapper, which means our `db_execution_duration_ms_total` includes its overhead. Both behaviours are deliberate (pinned by `JdbcCanonicalAutoConfigurationTest`); the opt-out is `canonlog.jdbc.enabled=false`.
 - **Multiple `DataSource` beans aggregate into one canonical line.** The BPP wraps every `DataSource` it sees, and all of them write to the same active accumulator. So `db_query_count` for a request that touches both a `primary` and a `replica` is the sum across both. There is no per-datasource namespacing today (`db_query_count_primary` etc.). Decide whether to namespace before adopters with read-replica setups depend on the aggregated shape.
+- **JDBC per-execution mean durations are reliable in integer ms; per-statement durations are not.** `db_execution_duration_ms_total / db_execution_count` gives mean per-round-trip latency, which is typically multi-ms even when individual statements aren't. Dividing by `db_query_count` instead would *under*-report per-statement latency for batched executions, because `datasource-proxy` charges duration once per `afterQuery` regardless of statement count. This is why the field rename happened (the old `db_query_duration_ms_total` was the worst of both worlds); document it here so the next person doesn't try to "fix" it back.
 
 ## Testing
 
@@ -130,7 +141,7 @@ These have already bitten or nearly bitten:
 
 - *Per-contributor tests* live in the contributor module and verify the contributor produces the expected fields given a controlled invocation (e.g. running an OkHttp call through the interceptor in isolation, asserting `http_client_request_count=1` and a sensible duration). These should not require Spring or Boot.
 - *Per-starter tests* live in the starter module and verify the auto-configuration wires correctly — the bean is registered, the contributor is active, fields appear on a real request. Spring Boot test slices are appropriate here.
-- *End-to-end tests* live in the sample app and verify the full pipeline: a real HTTP request produces one canonical line with the expected fields from all contributors plus handler-supplied fields. The two committed example log lines (`docs/examples/`) are effectively the spec for these tests.
+- *End-to-end tests* live in the sample app and verify the full pipeline: a real HTTP request produces one canonical line with the expected fields from all contributors plus handler-supplied fields. The example log lines committed inline in the top-level `README.md` are effectively the spec for these tests.
 
 **Negative assertions are first-class.** When testing a contributor or handler, assert what's *not* in the output as well as what is. `hasNoField(name)` and `hasNoFieldMatching(regex)` are the helpers. Common cases:
 - Asserting that a contributor doesn't leak request bodies, headers, or query params it wasn't asked to capture.
@@ -201,7 +212,7 @@ POC modules listed in the layout section above are all implemented and working. 
 1. **Success case** (`GET /posts/1`, 200): contributor model collapses HTTP, DB client, JDBC, and handler-supplied fields into one line.
 2. **Marked-failure case** (`GET /posts/999`, 404): handler calls `markFailed("post_not_found")`; line emits `error=true error_reason=post_not_found` with no `error_class`.
 
-Real example log lines are committed in `docs/examples/`.
+Real example log lines are committed inline in the top-level `README.md`.
 
 Load test (`ab -n 1000 -c 10 http://localhost:8080/posts/1`) produced 1000 canonical lines with no field bleeding between concurrent requests on the blocking servlet path. The same load test against `/suspend/posts/1` (the suspend-controller endpoint) also produces 1000 lines with no field bleeding — the accumulator + bridge holds up under real concurrency for both paths. Higher-concurrency check: `ab -n 5000 -c 50 -k http://localhost:8080/suspend/posts/1` sustained ~3940 req/s on platform threads (~4090 req/s on virtual threads), all 5000 lines with identical `post_id`, `db_query_count`, `http_client_request_count`, status — zero field bleeding at 5x the original concurrency. Same load test against the sync endpoint `/posts/1` on virtual threads sustained ~7800 req/s, also zero field bleeding.
 

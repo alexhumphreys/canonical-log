@@ -1,6 +1,6 @@
 package io.canonlog.sample
 
-import io.canonlog.okhttp.OkHttpCanonicalInterceptor
+import io.canonlog.okhttp.spring.OkHttpClientBuilderCustomizer
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
@@ -31,11 +31,18 @@ class Application {
         return upstream
     }
 
+    /**
+     * Demonstrates the customizer pattern adopters should use. The starter provides
+     * a `canonicalOkHttpClientBuilderCustomizer` bean that adds the canonical
+     * interceptor; we apply every registered customizer here. Adopters drop this
+     * bean into their own `@Configuration` verbatim.
+     */
     @Bean
-    fun okHttpClient(interceptor: OkHttpCanonicalInterceptor): OkHttpClient =
-        OkHttpClient.Builder()
-            .addInterceptor(interceptor)
-            .build()
+    fun okHttpClient(customizers: List<OkHttpClientBuilderCustomizer>): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+        customizers.forEach { it.customize(builder) }
+        return builder.build()
+    }
 
     @PreDestroy
     fun shutdown() {

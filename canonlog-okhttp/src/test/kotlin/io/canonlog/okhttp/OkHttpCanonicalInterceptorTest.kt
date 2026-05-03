@@ -6,14 +6,17 @@ import io.canonlog.WorkUnit
 import io.canonlog.WorkUnitAdapter
 import io.canonlog.withCanonicalLogBlocking
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.net.InetAddress
+import java.net.SocketTimeoutException
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 private val nullAdapter = object : WorkUnitAdapter<String> {
     override fun describe(input: String): WorkUnit = WorkUnit(input, "test", Instant.now())
@@ -49,10 +52,36 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
             }
 
             snap["http_client_request_count"] shouldBe 1L
-            (snap["http_client_request_duration_ms_total"] as Long >= 0L) shouldBe true
+            (snap["http_client_request_duration_ms_total"] as Long).shouldBeGreaterThanOrEqual(0L)
             snap.containsKey("http_client_4xx_count") shouldBe false
             snap.containsKey("http_client_5xx_count") shouldBe false
             snap.containsKey("http_client_error_count") shouldBe false
+        }
+
+        it("counts a redirect-following call as one request, not per network round-trip") {
+            // 302 → 200. OkHttp follows redirects transparently inside chain.proceed(),
+            // so an *application* interceptor (this contributor's intended slot) sees
+            // one user call regardless of redirect depth. A regression that swapped to
+            // per-network-roundtrip semantics would make this assertion fail.
+            server.enqueue(
+                MockResponse(
+                    code = 302,
+                    headers = Headers.headersOf("Location", "/target"),
+                    body = "",
+                ),
+            )
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+            var snap: Map<String, Any> = emptyMap()
+
+            withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                get(client(), server.url("/start").toString()) shouldBe 200
+            }
+
+            snap["http_client_request_count"] shouldBe 1L
+            // The redirect's 302 is not bucketed (3xx is not in the convenience aggregates),
+            // and the eventual 2xx is the response we observed — so neither 4xx nor 5xx fires.
+            snap.containsKey("http_client_4xx_count") shouldBe false
+            snap.containsKey("http_client_5xx_count") shouldBe false
         }
 
         it("counts a 404 as 4xx") {
@@ -98,6 +127,37 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
             snap["http_client_error_count"] shouldBe 1L
         }
 
+        it("counts a read timeout as an error") {
+            // SocketTimeoutException is an IOException, so the interceptor's catch handles
+            // it. Pinning here documents that the timeout class of failures lands in
+            // http_client_error_count, not in the 4xx/5xx buckets (no response was ever
+            // received). The reverse — counting timeouts as 5xx — would be wrong: the
+            // server didn't respond at all, it can't have indicated server failure.
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("late")
+                    .headersDelay(2, TimeUnit.SECONDS)
+                    .build(),
+            )
+            val slowClient = OkHttpClient.Builder()
+                .addInterceptor(OkHttpCanonicalInterceptor())
+                .readTimeout(200, TimeUnit.MILLISECONDS)
+                .build()
+            var snap: Map<String, Any> = emptyMap()
+
+            val ex = runCatching {
+                withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                    get(slowClient, server.url("/slow").toString())
+                }
+            }.exceptionOrNull()
+
+            (ex is SocketTimeoutException) shouldBe true
+            snap["http_client_request_count"] shouldBe 1L
+            snap["http_client_error_count"] shouldBe 1L
+            snap.containsKey("http_client_5xx_count") shouldBe false
+        }
+
         it("accumulates counters across multiple calls") {
             server.enqueue(MockResponse(code = 200))
             server.enqueue(MockResponse(code = 200))
@@ -123,5 +183,3 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
         }
     }
 })
-
-private fun localhost(): String = InetAddress.getLoopbackAddress().hostAddress

@@ -43,6 +43,28 @@ fun getPost(@PathVariable id: Long): Post {
 
 You'll get one log line per request with HTTP / DB / OkHttp fields contributed automatically, plus your `post_id` and (if applicable) `error_reason`.
 
+## Outbound HTTP wiring
+
+The HTTP filter and JDBC starters auto-instrument transparently — they hook in at points Spring controls. Outbound HTTP is different: an `OkHttpClient` is configured at builder time, not bean-construction time, and trying to mutate one after construction either silently breaks anyone who holds a reference to the original or forces the starter to provide a default client (which conflicts with most apps' custom timeouts/dispatchers/caches).
+
+Instead, the OkHttp starter provides an `OkHttpClientBuilderCustomizer` bean, which adopters apply where they build their client:
+
+```kotlin
+@Bean
+fun okHttpClient(customizers: List<OkHttpClientBuilderCustomizer>): OkHttpClient {
+    val builder = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        // ... your config ...
+    customizers.forEach { it.customize(builder) }
+    return builder.build()
+}
+```
+
+The list parameter composes cleanly: the canonical customizer ships under the bean name `canonicalOkHttpClientBuilderCustomizer`, and you can register additional `OkHttpClientBuilderCustomizer` beans (auth, logging, retries) without displacing it. Set `canonlog.okhttp.enabled=false` to opt out entirely.
+
+The same pattern works for `RestTemplateBuilder` / `WebClient.Builder` users — Spring's own builders use the same shape.
+
 ## What gets in the canonical log
 
 Three real example lines from the [sample app](samples/spring-demo/), one per outcome shape. Each is one line of JSON; pretty-printed here for readability.
@@ -138,7 +160,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 | --- | --- |
 | `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
 | `JdbcCanonicalListener` (jdbc starter) | `db_query_count` (statements), `db_execution_count` (round-trips), `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
-| `OkHttpCanonicalInterceptor` (okhttp starter) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
+| `OkHttpCanonicalInterceptor` (okhttp starter, applied via `OkHttpClientBuilderCustomizer`) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |
 | Logstash encoder + `customFields` | `@timestamp` (UTC), `service_name`, `environment` |
 
