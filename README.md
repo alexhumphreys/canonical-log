@@ -51,23 +51,24 @@ Three real example lines from the [sample app](samples/spring-demo/), one per ou
 
 ```json
 {
-  "@timestamp": "2026-05-02T07:28:55.321316Z",
+  "@timestamp": "2026-05-03T07:57:58.350966Z",
   "logger_name": "canonical",
   "service_name": "canonlog-spring-demo",
   "environment": "local",
 
   "http_request_method": "GET",
-  "http_route": "/posts/1",
+  "url_path": "/posts/1",
+  "http_route": "/posts/{id}",
   "http_response_status_code": 200,
-  "http_request_duration_ms": 16,
-  "work_unit_id": "9049d2c5-cd75-417c-89ed-44ae7665b670",
+  "http_request_duration_ms": 176,
+  "work_unit_id": "df5caed6-11fa-4e8a-bc1f-22e3648a1a11",
   "work_unit_kind": "http",
 
   "db_query_count": 2,
-  "db_query_duration_ms_total": 0,
+  "db_query_duration_ms_total": 3,
 
   "http_client_request_count": 2,
-  "http_client_request_duration_ms_total": 1,
+  "http_client_request_duration_ms_total": 34,
 
   "post_id": 1,
   "tag_count": 3,
@@ -76,20 +77,23 @@ Three real example lines from the [sample app](samples/spring-demo/), one per ou
 }
 ```
 
+`url_path` is the actual path that was requested. `http_route` is the matched route template — it's what you group by in Loki/Grafana, because it's bounded in cardinality (every `/posts/N` request lands on the same route). The two together let a query say "all hits on the post-detail route" without conflating distinct posts.
+
 ### 2. Marked failure — `GET /posts/999` → 404
 
 The handler called `CanonicalLog.markFailed("post_not_found", "post_id" to id)` before throwing `ResponseStatusException(NOT_FOUND)`. The `error=true` and `error_reason` are handler intent. The absence of `error_class` is the signal that this was a deliberately-flagged failure rather than an uncaught exception — useful for queries that want to distinguish business errors from unexpected ones.
 
 ```json
 {
-  "@timestamp": "2026-05-02T07:28:55.347233Z",
+  "@timestamp": "2026-05-03T07:57:58.373568Z",
   "logger_name": "canonical",
 
   "http_request_method": "GET",
-  "http_route": "/posts/999",
+  "url_path": "/posts/999",
+  "http_route": "/posts/{id}",
   "http_response_status_code": 404,
-  "http_request_duration_ms": 7,
-  "work_unit_id": "bff8ee89-02d1-46c0-83c1-216ff256b1ce",
+  "http_request_duration_ms": 3,
+  "work_unit_id": "49860c37-8394-47ef-b6c9-496b240b8293",
   "work_unit_kind": "http",
 
   "error": true,
@@ -107,14 +111,15 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 ```json
 {
-  "@timestamp": "2026-05-02T07:28:55.380509Z",
+  "@timestamp": "2026-05-03T07:57:58.40927Z",
   "logger_name": "canonical",
 
   "http_request_method": "GET",
-  "http_route": "/posts/1/explode",
+  "url_path": "/posts/1/explode",
+  "http_route": "/posts/{id}/explode",
   "http_response_status_code": 500,
-  "http_request_duration_ms": 2,
-  "work_unit_id": "03ea7c82-6764-4c50-9f2f-5689a42f9507",
+  "http_request_duration_ms": 1,
+  "work_unit_id": "0e2d9d0e-afba-448f-83f4-f10110cc2294",
   "work_unit_kind": "http",
 
   "error": true,
@@ -129,7 +134,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 | Source | Fields |
 | --- | --- |
-| `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `http_route`, `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
+| `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
 | `JdbcCanonicalListener` (jdbc starter) | `db_query_count`, `db_query_duration_ms_total`, `db_slow_query_count`, `db_query_error_count` |
 | `OkHttpCanonicalInterceptor` (okhttp starter) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |

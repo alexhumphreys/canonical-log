@@ -13,7 +13,6 @@ import org.springframework.mock.web.MockAsyncContext
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -23,9 +22,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * Servlet containers vary in callback order: some fire `onError` before
  * `onComplete`, some fire `onTimeout` before `onComplete`, some fire `onComplete`
  * alone. Even pathological cases (multiple `onComplete`, no terminal callback at
- * all) shouldn't cause double-emit or hang. The [AtomicBoolean] guard in the
- * filter's emit lambda is what makes this safe; this test prevents anyone from
- * "simplifying" the guard away.
+ * all) shouldn't cause double-emit or hang. The [AtomicBoolean] guard inside
+ * [CanonicalLogAsyncEmitListener] is what makes this safe; the wrapped emit lambda
+ * passed in here counts invocations directly, so any regression that removes the
+ * guard inside the listener will fail the property.
  */
 private enum class AsyncCallback {
     COMPLETE_OK, COMPLETE_WITH_ERROR, ERROR, TIMEOUT;
@@ -55,12 +55,8 @@ class CanonicalLogFilterAsyncPropertyTest : DescribeSpec({
             val errorEvent = AsyncEvent(ctx, req, res, cause)
 
             checkAll(Arb.list(Arb.element<AsyncCallback>(*AsyncCallback.entries.toTypedArray()), 1..6)) { sequence ->
-                val emitted = AtomicBoolean(false)
                 val emitCount = AtomicInteger(0)
-                val emit: (Throwable?) -> Unit = {
-                    if (emitted.compareAndSet(false, true)) emitCount.incrementAndGet()
-                }
-                val listener = CanonicalLogAsyncEmitListener(emit)
+                val listener = CanonicalLogAsyncEmitListener { emitCount.incrementAndGet() }
 
                 sequence.forEach { it.fire(listener, event, errorEvent) }
 
@@ -77,11 +73,7 @@ class CanonicalLogFilterAsyncPropertyTest : DescribeSpec({
             val errorEvent = AsyncEvent(ctx, req, res, cause)
 
             var captured: Throwable? = null
-            val emitted = AtomicBoolean(false)
-            val emit: (Throwable?) -> Unit = { error ->
-                if (emitted.compareAndSet(false, true)) captured = error
-            }
-            val listener = CanonicalLogAsyncEmitListener(emit)
+            val listener = CanonicalLogAsyncEmitListener { captured = it }
 
             listener.onError(errorEvent)
             listener.onComplete(event)
@@ -96,16 +88,33 @@ class CanonicalLogFilterAsyncPropertyTest : DescribeSpec({
             val event = AsyncEvent(ctx, req, res)
 
             var captured: Throwable? = null
-            val emitted = AtomicBoolean(false)
-            val emit: (Throwable?) -> Unit = { error ->
-                if (emitted.compareAndSet(false, true)) captured = error
-            }
-            val listener = CanonicalLogAsyncEmitListener(emit)
+            val listener = CanonicalLogAsyncEmitListener { captured = it }
 
             listener.onTimeout(event)
             listener.onComplete(event)
 
             (captured is TimeoutException) shouldBe true
+        }
+
+        it("onStartAsync re-registration: dispatch-and-redispatch terminal callbacks still single-emit") {
+            val req = MockHttpServletRequest("GET", "/").apply { isAsyncSupported = true }
+            val res = MockHttpServletResponse()
+            val ctx = MockAsyncContext(req, res)
+            val event = AsyncEvent(ctx, req, res)
+
+            val emitCount = AtomicInteger(0)
+            val listener = CanonicalLogAsyncEmitListener { emitCount.incrementAndGet() }
+
+            // Simulate: handler dispatches again (onStartAsync), then dispatch runs and
+            // completes (onComplete). The container may or may not deduplicate listener
+            // registrations — the single-emit guard inside the listener makes that
+            // irrelevant from our side. Fire onComplete twice to model the worst case
+            // where two registrations of the same listener both fire.
+            listener.onStartAsync(event)
+            listener.onComplete(event)
+            listener.onComplete(event)
+
+            emitCount.get() shouldBe 1
         }
     }
 })

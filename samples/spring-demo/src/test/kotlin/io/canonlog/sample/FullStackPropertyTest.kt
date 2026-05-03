@@ -123,7 +123,8 @@ class FullStackPropertyTest : DescribeSpec({
 
                     val snap = lastCanonicalSnapshot(appender)!!
                     snap["http_route"] shouldBe "/property/run"
-                    snap["http_response_status_code"] shouldBe 200L
+                    snap["url_path"] shouldBe "/property/run"
+                    snap["http_response_status_code"] shouldBe 200
 
                     val expected = collectExpected(plan)
                     expected.forEach { (k, v) -> snap[k] shouldBe v }

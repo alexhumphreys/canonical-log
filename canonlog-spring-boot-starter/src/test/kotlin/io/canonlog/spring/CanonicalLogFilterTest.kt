@@ -14,8 +14,22 @@ import org.springframework.mock.web.MockAsyncContext
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 
-private fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any>? {
-    val event = appender.list.lastOrNull { it.loggerName == "canonical" } ?: return null
+/**
+ * Read the canonical-line fields back from the log event for assertions.
+ *
+ * Reflection is used because logstash-logback-encoder's [MapEntriesAppendingMarker]
+ * has no public accessor for its underlying map (only `writeTo(JsonGenerator)`,
+ * which would require round-tripping through Jackson and lose Kotlin-side type
+ * fidelity, e.g. `Long` vs `Int`). If the encoder ever exposes a public
+ * `getFieldMap()`, swap to that.
+ *
+ * Fails loudly if no canonical line was emitted — that's almost always a real test
+ * failure (the filter didn't run, or didn't reach the emit), and a null return
+ * would mask it as "field not present."
+ */
+private fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any> {
+    val event = appender.list.lastOrNull { it.loggerName == "canonical" }
+        ?: error("no canonical log event captured")
     val args: Array<out Any?> = event.argumentArray ?: emptyArray()
     val markers: List<Any> = (event.markerList ?: emptyList<Marker>()) + args.filterNotNull()
     return markers.filterIsInstance<MapEntriesAppendingMarker>()
@@ -57,8 +71,8 @@ class CanonicalLogFilterTest : DescribeSpec({
                 CanonicalLogFilter().doFilter(req, res) { _, _ -> }
                 appender.list.count { it.loggerName == "canonical" } shouldBe 1
                 val snap = lastCanonicalSnapshot(appender)
-                snap?.get("http_route") shouldBe "/sync"
-                snap?.get("http_response_status_code") shouldBe 200L
+                snap["url_path"] shouldBe "/sync"
+                snap["http_response_status_code"] shouldBe 200
             } finally {
                 detachAppender(appender)
             }
@@ -82,8 +96,8 @@ class CanonicalLogFilterTest : DescribeSpec({
 
                 appender.list.count { it.loggerName == "canonical" } shouldBe 1
                 val snap = lastCanonicalSnapshot(appender)
-                snap?.get("http_route") shouldBe "/async"
-                snap?.get("http_response_status_code") shouldBe 200L
+                snap["url_path"] shouldBe "/async"
+                snap["http_response_status_code"] shouldBe 200
             } finally {
                 detachAppender(appender)
             }
@@ -126,8 +140,8 @@ class CanonicalLogFilterTest : DescribeSpec({
                 (ex is IllegalStateException) shouldBe true
                 appender.list.count { it.loggerName == "canonical" } shouldBe 1
                 val snap = lastCanonicalSnapshot(appender)
-                snap?.get("error") shouldBe true
-                snap?.get("error_class") shouldBe "java.lang.IllegalStateException"
+                snap["error"] shouldBe true
+                snap["error_class"] shouldBe "java.lang.IllegalStateException"
             } finally {
                 detachAppender(appender)
             }

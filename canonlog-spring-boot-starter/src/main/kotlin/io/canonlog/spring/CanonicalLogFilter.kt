@@ -52,10 +52,8 @@ public class CanonicalLogFilter : OncePerRequestFilter() {
         val ctx = CanonicalLogContext(adapter.describe(exchange))
         val previous = bindCurrentCanonicalContext(ctx)
         val startNs = System.nanoTime()
-        val emitted = AtomicBoolean(false)
 
         fun emit(error: Throwable?) {
-            if (!emitted.compareAndSet(false, true)) return
             val outcome = if (error != null) {
                 Outcome.Threw(elapsedMs(startNs), error)
             } else {
@@ -66,6 +64,12 @@ public class CanonicalLogFilter : OncePerRequestFilter() {
         }
 
         try {
+            // Sync and async paths are mutually exclusive: if chain.doFilter throws,
+            // we never register the listener (and emit fires from the catch arm); if
+            // the chain returns and async was started, the listener owns emit; otherwise
+            // we emit synchronously here. So emit() is called exactly once per request
+            // — single-shot semantics live in [CanonicalLogAsyncEmitListener] for the
+            // async case, where servlet containers may fire multiple terminal callbacks.
             filterChain.doFilter(request, response)
             if (request.isAsyncStarted) {
                 request.asyncContext.addListener(CanonicalLogAsyncEmitListener(::emit))
@@ -85,22 +89,34 @@ public class CanonicalLogFilter : OncePerRequestFilter() {
 
 /**
  * Servlet [AsyncListener] that funnels every terminal callback (`onComplete`,
- * `onError`, `onTimeout`) into a single `emit` call. The single-emit invariant is
- * enforced by the caller's emit lambda (typically guarded by an [java.util.concurrent.atomic.AtomicBoolean]).
+ * `onError`, `onTimeout`) into exactly one `emit` call.
  *
- * Containers can fire `onError` and `onComplete` in either order, fire `onTimeout`
- * before `onComplete`, or fire `onComplete` alone — the emit lambda must be safe
- * under all such orderings. See `CanonicalLogFilterAsyncPropertyTest` for the
- * property pin.
+ * Containers vary: some fire `onError` then `onComplete`; some fire `onTimeout` then
+ * `onComplete`; some fire `onComplete` alone; pathological cases can fire the same
+ * callback twice. The internal [AtomicBoolean] enforces single-emit regardless,
+ * so callers don't have to guard their own lambda. The first callback wins —
+ * subsequent callbacks are silently dropped (their error/cause is not captured).
+ *
+ * `onStartAsync` re-registers this listener on the new async cycle (the servlet
+ * spec requires manual re-registration after `AsyncContext.dispatch()`); the
+ * single-emit guard makes that safe even if a container ends up holding two
+ * registrations and firing terminal callbacks twice.
+ *
+ * See `CanonicalLogFilterAsyncPropertyTest` for the orderings property pin.
  */
 internal class CanonicalLogAsyncEmitListener(
     private val emit: (Throwable?) -> Unit,
 ) : AsyncListener {
-    override fun onComplete(event: AsyncEvent) = emit(event.throwable)
-    override fun onError(event: AsyncEvent) = emit(event.throwable)
-    override fun onTimeout(event: AsyncEvent) = emit(TimeoutException("async dispatch timeout"))
+    private val emitted = AtomicBoolean(false)
+
+    override fun onComplete(event: AsyncEvent) = emitOnce(event.throwable)
+    override fun onError(event: AsyncEvent) = emitOnce(event.throwable)
+    override fun onTimeout(event: AsyncEvent) = emitOnce(TimeoutException("async dispatch timeout"))
     override fun onStartAsync(event: AsyncEvent) {
-        // If the handler dispatches again, propagate the listener.
         event.asyncContext.addListener(this)
+    }
+
+    private fun emitOnce(error: Throwable?) {
+        if (emitted.compareAndSet(false, true)) emit(error)
     }
 }
