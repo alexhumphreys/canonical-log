@@ -3,4 +3,5 @@ dependencies {
     implementation(libs.okhttp)
 
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
 }

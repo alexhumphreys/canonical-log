@@ -13,6 +13,8 @@ import mockwebserver3.MockWebServer
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.time.Instant
@@ -156,6 +158,50 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
             snap["http_client_request_count"] shouldBe 1L
             snap["http_client_error_count"] shouldBe 1L
             snap.containsKey("http_client_5xx_count") shouldBe false
+        }
+
+        it("counts an SSL handshake failure as an error") {
+            // Server presents a self-signed cert; the client uses an empty trust store
+            // (trustNothing) so the handshake fails with SSLHandshakeException. Both
+            // SSLHandshakeException and the broader SSLException family extend
+            // IOException, so the interceptor's catch handles them; this test pins
+            // that the SSL class of failures lands in http_client_error_count.
+            val serverCert = HeldCertificate.Builder()
+                .addSubjectAlternativeName("localhost")
+                .commonName("localhost")
+                .build()
+            val serverHandshake = HandshakeCertificates.Builder()
+                .heldCertificate(serverCert)
+                .build()
+            // Client trusts nothing — i.e. doesn't trust the self-signed server cert.
+            val clientHandshake = HandshakeCertificates.Builder().build()
+
+            server.useHttps(serverHandshake.sslSocketFactory())
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+
+            val httpsClient = OkHttpClient.Builder()
+                .addInterceptor(OkHttpCanonicalInterceptor())
+                .sslSocketFactory(clientHandshake.sslSocketFactory(), clientHandshake.trustManager)
+                .callTimeout(5, TimeUnit.SECONDS)
+                .build()
+            var snap: Map<String, Any> = emptyMap()
+
+            val ex = runCatching {
+                withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                    get(httpsClient, server.url("/").toString())
+                }
+            }.exceptionOrNull()
+
+            // The exact subclass varies by JDK/TLS implementation (SSLHandshakeException,
+            // SSLPeerUnverifiedException, occasionally a plain IOException wrapping the
+            // underlying cause). The contract under test is that whatever flavour OkHttp
+            // surfaces, it extends IOException so the interceptor's catch block fires —
+            // which is what produces http_client_error_count.
+            (ex is IOException) shouldBe true
+            snap["http_client_request_count"] shouldBe 1L
+            snap["http_client_error_count"] shouldBe 1L
+            snap.containsKey("http_client_5xx_count") shouldBe false
+            snap.containsKey("http_client_4xx_count") shouldBe false
         }
 
         it("accumulates counters across multiple calls") {

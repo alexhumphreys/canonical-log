@@ -28,5 +28,12 @@ class CanonicalLogAutoConfigurationTest : DescribeSpec({
                 ctx.containsBean("canonicalLogFilter") shouldBe false
             }
         }
+
+        it("opts out when canonlog.http.enabled=false") {
+            runner.withPropertyValues("canonlog.http.enabled=false").run { ctx ->
+                ctx.getBeansOfType(CanonicalLogFilter::class.java).size shouldBe 0
+                ctx.getBeansOfType(FilterRegistrationBean::class.java).size shouldBe 0
+            }
+        }
     }
 })
