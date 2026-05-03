@@ -6,19 +6,14 @@ import net.logstash.logback.marker.MapEntriesAppendingMarker
 import org.slf4j.Marker
 
 /**
- * Reads the canonical-line fields back from the most recent log event for assertions.
+ * Reads the canonical-line fields back from a captured log event for assertions.
  *
  * Reflection is used because logstash-logback-encoder's [MapEntriesAppendingMarker]
  * has no public accessor for its underlying map (only `writeTo(JsonGenerator)`,
  * which would lose Kotlin-side type fidelity — `Long` vs `Int`). If the encoder
  * ever exposes a public `getFieldMap()`, swap to that.
- *
- * Returns `null` when no canonical line was captured. Tests that *require* a line
- * should `!!` the result so a missing emit fails loudly rather than as "field not
- * present."
  */
-internal fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any>? {
-    val event = appender.list.lastOrNull { it.loggerName == "canonical" } ?: return null
+private fun snapshotOf(event: ILoggingEvent): Map<String, Any> {
     val args: Array<out Any?> = event.argumentArray ?: emptyArray()
     val markers: List<Any> = (event.markerList ?: emptyList<Marker>()) + args.filterNotNull()
     return markers.filterIsInstance<MapEntriesAppendingMarker>()
@@ -31,5 +26,21 @@ internal fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<S
             @Suppress("UNCHECKED_CAST")
             mapField.get(marker) as Map<String, Any>
         }
-        .fold(emptyMap<String, Any>()) { acc, m -> acc + m }
+        .fold(emptyMap()) { acc, m -> acc + m }
 }
+
+/**
+ * The most recent canonical line in the appender, or `null` if none was captured.
+ * Tests that *require* a line should `!!` so a missing emit fails loudly rather
+ * than as "field not present."
+ */
+internal fun lastCanonicalSnapshot(appender: ListAppender<ILoggingEvent>): Map<String, Any>? =
+    appender.list.lastOrNull { it.loggerName == "canonical" }?.let(::snapshotOf)
+
+/**
+ * Every canonical line captured by the appender, in emission order. Used by load
+ * tests that assert on per-line invariants (one work unit per request, no field
+ * bleeding between concurrent requests, etc).
+ */
+internal fun allCanonicalSnapshots(appender: ListAppender<ILoggingEvent>): List<Map<String, Any>> =
+    appender.list.filter { it.loggerName == "canonical" }.map(::snapshotOf)
