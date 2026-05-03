@@ -23,13 +23,15 @@ In the app's stdout you'll see one canonical log line per request, looking like:
   "logger_name": "canonical",
   "message": "canonical",
   "http_request_method": "GET",
-  "http_route": "/posts/1",
+  "url_path": "/posts/1",
+  "http_route": "/posts/{id}",
   "http_response_status_code": 200,
   "http_request_duration_ms": 21,
   "work_unit_id": "69eab700-480c-4611-af6d-6b7f4592e113",
   "work_unit_kind": "http",
   "db_query_count": 2,
-  "db_query_duration_ms_total": 3,
+  "db_execution_count": 2,
+  "db_execution_duration_ms_total": 3,
   "http_client_request_count": 2,
   "http_client_request_duration_ms_total": 7,
   "post_id": 1,
@@ -43,9 +45,9 @@ Where each field comes from:
 
 | Field | Source |
 | --- | --- |
-| `http_request_method`, `http_route`, `http_response_status_code`, `http_request_duration_ms` | `HttpWorkUnitAdapter` (umbrella starter) |
+| `http_request_method`, `url_path`, `http_route`, `http_response_status_code`, `http_request_duration_ms` | `HttpWorkUnitAdapter` (umbrella starter) |
 | `work_unit_id`, `work_unit_kind` | `HttpWorkUnitAdapter` |
-| `db_query_count`, `db_query_duration_ms_total` | `JdbcCanonicalListener` (jdbc starter) |
+| `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total` | `JdbcCanonicalListener` (jdbc starter) |
 | `http_client_request_count`, `http_client_request_duration_ms_total` | `OkHttpCanonicalInterceptor` (okhttp starter) |
 | `post_id`, `tag_count`, `comment_count`, `cache_hit` | Handler code via `CanonicalLog.put` |
 

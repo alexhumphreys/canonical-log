@@ -44,7 +44,7 @@ The accumulator lives for the lifetime of one work unit. Contributors (libraries
 
 - `canonlog-core` — accumulator, `WorkUnit`, `WorkUnitAdapter`, `Outcome`, `CanonicalLogContext`, the `ThreadContextElement` bridge. Framework-agnostic.
 - `canonlog-okhttp` — OkHttp `Interceptor` that contributes `http_client_request_count`, `http_client_request_duration_ms_total`. Framework-agnostic.
-- `canonlog-jdbc` — `datasource-proxy` `QueryExecutionListener` that contributes `db_query_count`, `db_query_duration_ms_total`. Framework-agnostic.
+- `canonlog-jdbc` — `datasource-proxy` `QueryExecutionListener` that contributes `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count`. Framework-agnostic.
 - `canonlog-okhttp-spring-boot-starter` — auto-config wiring the OkHttp contributor.
 - `canonlog-jdbc-spring-boot-starter` — auto-config wiring the JDBC contributor (uses `@JvmStatic` companion-object `@Bean` for the BeanPostProcessor per Spring's recommendation).
 - `canonlog-spring-boot-starter` — umbrella starter that pulls in the others plus the HTTP request adapter (servlet filter that creates the work unit, captures `http_request_method` / `http_route` / `http_response_status_code` / `http_request_duration_ms`, emits the line).
@@ -75,7 +75,7 @@ The presence of `error_reason` without `error_class` is the signal that this was
 Suffix conventions:
 - Durations: `long` milliseconds, `_ms` suffix (e.g. `http_request_duration_ms`)
 - Counts: `long`, `_count` suffix (e.g. `db_query_count`)
-- Sums of durations: `_duration_ms_total` suffix (e.g. `db_query_duration_ms_total`)
+- Sums of durations: `_duration_ms_total` suffix (e.g. `db_execution_duration_ms_total`)
 
 **Schema versioning.** Include `canonical_log_version=v1` in every line.
 
@@ -119,6 +119,8 @@ These have already bitten or nearly bitten:
 - **Uncaught exception status capture is filter-stage-bound.** When a controller throws an unhandled exception, Tomcat's outer valve maps it to 500 *after* `CanonicalLogFilter` unwinds. The filter sees `response.status` as still 200 at the moment of catch. The adapter compensates: when `Outcome.Threw` and `response.status < 500`, it overrides `http_response_status_code` to 500 to match what the client actually receives. This is heuristic — if a custom error handler maps to a different 5xx (e.g. 503), the canonical line will report 500 instead. Pinned by `HttpWorkUnitAdapterTest`; documented as a known approximation.
 - **Cancellation semantics are undefined.** Servlet container request timeouts cancel the controller's coroutine mid-flight (e.g. inside `withContext(Dispatchers.IO)`). What the canonical line should report (`Outcome.Cancelled`? Threw with `CancellationException`? `error_reason="cancelled"`?), whether contributions in flight at cancellation time land or are silently dropped, and how the AsyncListener.onTimeout path interacts with it — all currently undefined. Sketch the semantics before adopters depend on the behaviour.
 - **Virtual threads work end-to-end.** Verified: with `spring.threads.virtual.enabled=true` in `application.properties`, the entire test suite (67 tests) passes, the suspend endpoint runs entirely on virtual threads (`Thread.currentThread().isVirtual == true` on every request entry), and `ab -n 5000 -c 50 -k http://localhost:8080/suspend/posts/1` produces 5000 lines with zero field bleeding. The sample app currently has virtual threads enabled by default. The bridge, filter, accumulator, and contributors all behave identically on virtual and platform threads — the threadlocal abstraction abstracts over both uniformly.
+- **JDBC starter replaces `DataSource` beans with proxies.** `JdbcCanonicalBeanPostProcessor` runs at `Ordered.LOWEST_PRECEDENCE` so it wraps the outermost `DataSource` proxy. Two adopter-visible consequences: (a) injecting by concrete type (`@Autowired private val ds: HikariDataSource`) fails with `BeanNotOfRequiredTypeException` — adopters must inject `DataSource` instead; (b) when another `datasource-proxy` user is on the classpath we add ourselves to the existing chain rather than re-wrap, but if a *non-`datasource-proxy`* tracing wrapper sits above us we proxy that wrapper, which means our `db_execution_duration_ms_total` includes its overhead. Both behaviours are deliberate (pinned by `JdbcCanonicalAutoConfigurationTest`); the opt-out is `canonlog.jdbc.enabled=false`.
+- **Multiple `DataSource` beans aggregate into one canonical line.** The BPP wraps every `DataSource` it sees, and all of them write to the same active accumulator. So `db_query_count` for a request that touches both a `primary` and a `replica` is the sum across both. There is no per-datasource namespacing today (`db_query_count_primary` etc.). Decide whether to namespace before adopters with read-replica setups depend on the aggregated shape.
 
 ## Testing
 

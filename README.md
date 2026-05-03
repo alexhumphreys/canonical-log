@@ -51,7 +51,7 @@ Three real example lines from the [sample app](samples/spring-demo/), one per ou
 
 ```json
 {
-  "@timestamp": "2026-05-03T07:57:58.350966Z",
+  "@timestamp": "2026-05-03T08:06:19.437881Z",
   "logger_name": "canonical",
   "service_name": "canonlog-spring-demo",
   "environment": "local",
@@ -60,15 +60,16 @@ Three real example lines from the [sample app](samples/spring-demo/), one per ou
   "url_path": "/posts/1",
   "http_route": "/posts/{id}",
   "http_response_status_code": 200,
-  "http_request_duration_ms": 176,
-  "work_unit_id": "df5caed6-11fa-4e8a-bc1f-22e3648a1a11",
+  "http_request_duration_ms": 153,
+  "work_unit_id": "97db3003-740b-460c-b458-d648111c56f6",
   "work_unit_kind": "http",
 
   "db_query_count": 2,
-  "db_query_duration_ms_total": 3,
+  "db_execution_count": 2,
+  "db_execution_duration_ms_total": 3,
 
   "http_client_request_count": 2,
-  "http_client_request_duration_ms_total": 34,
+  "http_client_request_duration_ms_total": 24,
 
   "post_id": 1,
   "tag_count": 3,
@@ -85,7 +86,7 @@ The handler called `CanonicalLog.markFailed("post_not_found", "post_id" to id)` 
 
 ```json
 {
-  "@timestamp": "2026-05-03T07:57:58.373568Z",
+  "@timestamp": "2026-05-03T08:06:19.460885Z",
   "logger_name": "canonical",
 
   "http_request_method": "GET",
@@ -93,14 +94,15 @@ The handler called `CanonicalLog.markFailed("post_not_found", "post_id" to id)` 
   "http_route": "/posts/{id}",
   "http_response_status_code": 404,
   "http_request_duration_ms": 3,
-  "work_unit_id": "49860c37-8394-47ef-b6c9-496b240b8293",
+  "work_unit_id": "f37110bf-4a09-4617-ac13-401f1b20b96f",
   "work_unit_kind": "http",
 
   "error": true,
   "error_reason": "post_not_found",
 
   "db_query_count": 1,
-  "db_query_duration_ms_total": 0,
+  "db_execution_count": 1,
+  "db_execution_duration_ms_total": 0,
   "post_id": 999
 }
 ```
@@ -111,15 +113,15 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 ```json
 {
-  "@timestamp": "2026-05-03T07:57:58.40927Z",
+  "@timestamp": "2026-05-03T08:06:19.490255Z",
   "logger_name": "canonical",
 
   "http_request_method": "GET",
   "url_path": "/posts/1/explode",
   "http_route": "/posts/{id}/explode",
   "http_response_status_code": 500,
-  "http_request_duration_ms": 1,
-  "work_unit_id": "0e2d9d0e-afba-448f-83f4-f10110cc2294",
+  "http_request_duration_ms": 2,
+  "work_unit_id": "0b67b2cc-0635-4b6e-a31b-352673584898",
   "work_unit_kind": "http",
 
   "error": true,
@@ -135,7 +137,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 | Source | Fields |
 | --- | --- |
 | `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
-| `JdbcCanonicalListener` (jdbc starter) | `db_query_count`, `db_query_duration_ms_total`, `db_slow_query_count`, `db_query_error_count` |
+| `JdbcCanonicalListener` (jdbc starter) | `db_query_count` (statements), `db_execution_count` (round-trips), `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
 | `OkHttpCanonicalInterceptor` (okhttp starter) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |
 | Logstash encoder + `customFields` | `@timestamp` (UTC), `service_name`, `environment` |

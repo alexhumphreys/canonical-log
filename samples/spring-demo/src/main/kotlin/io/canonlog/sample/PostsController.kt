@@ -48,7 +48,7 @@ class PostsController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND)
         }
 
-        // Touch a second table to demonstrate db_query_count > 1
+        // Touch a second table to demonstrate db_query_count / db_execution_count > 1
         val tagCount = jdbc.queryForObject(
             "SELECT count(*) FROM post_tags WHERE post_id = ?",
             Int::class.java,
