@@ -18,8 +18,8 @@ import net.ttddyy.dsproxy.listener.QueryExecutionListener
  * - `db_execution_duration_ms_total` — total wall-clock time spent on executions,
  *   including failed ones. Charged once per `afterQuery` callback. Pair with
  *   `db_execution_count` to compute mean per-round-trip latency.
- * - `db_slow_execution_count` — number of executions whose elapsed time exceeded
- *   [slowQueryThresholdMs]. Per-execution, not per-statement, because
+ * - `db_slow_execution_count` — number of executions whose elapsed time met or
+ *   exceeded [slowQueryThresholdMs]. Per-execution, not per-statement, because
  *   `datasource-proxy` does not surface per-statement timing inside a batch.
  * - `db_execution_error_count` — number of failed executions (1 per failed
  *   `afterQuery`). Per-execution, not per-statement, for the same reason.
@@ -44,7 +44,7 @@ public class JdbcCanonicalListener(
         // Time is charged for failed executions too — operators want total time-spent
         // on DB work, not just successful work.
         CanonicalLog.increment("db_execution_duration_ms_total", execInfo.elapsedTime)
-        if (execInfo.elapsedTime > slowQueryThresholdMs) {
+        if (execInfo.elapsedTime >= slowQueryThresholdMs) {
             CanonicalLog.increment("db_slow_execution_count")
         }
         if (!execInfo.isSuccess) {
