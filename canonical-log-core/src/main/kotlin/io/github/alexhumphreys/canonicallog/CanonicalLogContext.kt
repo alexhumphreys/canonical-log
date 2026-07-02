@@ -12,14 +12,33 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
         fields[key] = value
     }
 
+    /**
+     * Add [by] to the Long counter at [key], creating it if absent.
+     *
+     * A field that's incremented must only ever be written via `increment()`, never
+     * [put]. If [key] already holds a non-Long (someone `put` it), the increment is
+     * **dropped** and the conflict is recorded on the canonical line instead, via
+     * `canonical_log_type_conflict=true` and `canonical_log_type_conflict_key=<key>`
+     * (last conflicting key wins). Deliberately non-throwing: increments are called
+     * from contributors embedded in application-critical paths (JDBC listeners,
+     * HTTP interceptors), and telemetry must never fail the operation it observes —
+     * a throw here would fail the app's actual DB call or replace the real
+     * `IOException` of a failed HTTP call.
+     */
     public fun increment(key: String, by: Long = 1L) {
+        var conflictingType: String? = null
         fields.merge(key, by) { existing, _ ->
-            check(existing is Long) {
-                "Cannot increment canonical-log field '$key': existing value has type " +
-                    "${existing::class.qualifiedName}, expected Long. A field that's " +
-                    "incremented must only ever be written via increment(), never put()."
+            if (existing is Long) {
+                existing + by
+            } else {
+                conflictingType = existing::class.qualifiedName ?: "unknown"
+                existing
             }
-            existing + by
+        }
+        if (conflictingType != null) {
+            put("canonical_log_type_conflict", true)
+            put("canonical_log_type_conflict_key", key)
+            put("canonical_log_type_conflict_type", conflictingType)
         }
     }
 

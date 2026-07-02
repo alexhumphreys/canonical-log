@@ -1,9 +1,7 @@
 package io.github.alexhumphreys.canonicallog
 
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import java.time.Instant
 
 @OptIn(DelicateCanonicalLogApi::class)
@@ -32,13 +30,19 @@ class CanonicalLogContextTest : DescribeSpec({
             snap.containsKey("absent") shouldBe false
         }
 
-        it("incrementing a field that was previously put as a non-Long throws a clear error") {
+        it("incrementing a field that was previously put as a non-Long drops the increment and marks the conflict") {
             val ctx = CanonicalLogContext(WorkUnit("id", "kind", Instant.now()))
             ctx.put("misused", "i should have been a long")
 
-            val ex = shouldThrow<IllegalStateException> { ctx.increment("misused") }
-            ex.message!! shouldContain "Cannot increment canonical-log field 'misused'"
-            ex.message!! shouldContain "kotlin.String"
+            // Must not throw: increments run inside contributors embedded in
+            // application-critical paths (JDBC listener, OkHttp interceptor).
+            ctx.increment("misused")
+
+            val snap = ctx.snapshot()
+            snap["misused"] shouldBe "i should have been a long"
+            snap["canonical_log_type_conflict"] shouldBe true
+            snap["canonical_log_type_conflict_key"] shouldBe "misused"
+            snap["canonical_log_type_conflict_type"] shouldBe "kotlin.String"
         }
 
         it("markFailed with extras passes through to the snapshot") {
