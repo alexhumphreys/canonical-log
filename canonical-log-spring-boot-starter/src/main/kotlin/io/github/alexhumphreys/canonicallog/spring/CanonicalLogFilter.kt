@@ -10,10 +10,17 @@ import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.slf4j.LoggerFactory
 import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Same logger name core uses for its own failure reporting (throwing emit/enrich),
+ * so adopters configure one logger for all canonical-log library warnings.
+ */
+private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
 
 /**
  * Servlet filter that opens a canonical work unit for each HTTP request and emits
@@ -53,7 +60,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - [sampler] is consulted after [WorkUnitAdapter.enrich], so it sees the complete
  *    line (status, duration, error fields) and can implement "always keep errors,
  *    sample healthy 200s" — see [CanonicalLogSampler]. Defaults to emit-all.
- *    A throwing sampler currently propagates like a throwing [writer].
+ *
+ * Telemetry must never fail the request it observes: exceptions from the adapter's
+ * `enrich`, the [sampler], and the [writer] are caught, WARN-logged to the
+ * `io.github.alexhumphreys.canonicallog` logger, and never propagate to the caller.
+ * A throwing enrich is additionally recorded on the line via the
+ * `canonical_log_enrich_error*` fields (matching core); a throwing sampler fails
+ * open (the line is still written — a broken sampler shouldn't silently kill
+ * observability); a throwing writer drops the line, the WARN being the only record.
  */
 @OptIn(DelicateCanonicalLogApi::class)
 public class CanonicalLogFilter(
@@ -84,8 +98,38 @@ public class CanonicalLogFilter(
             } else {
                 Outcome.Completed(elapsedMs(startNs))
             }
-            adapter.enrich(ctx, exchange, outcome)
-            if (sampler.shouldEmit(ctx)) writer.write(ctx)
+            try {
+                adapter.enrich(ctx, exchange, outcome)
+            } catch (e: Exception) {
+                ctx.put("canonical_log_enrich_error", true)
+                ctx.put("canonical_log_enrich_error_class", e::class.qualifiedName ?: "unknown")
+                libraryLogger.warn(
+                    "adapter.enrich threw for work unit {}; failure recorded on the canonical line, request unaffected",
+                    ctx.workUnit.id,
+                    e,
+                )
+            }
+            val keep = try {
+                sampler.shouldEmit(ctx)
+            } catch (e: Exception) {
+                libraryLogger.warn(
+                    "sampler threw for work unit {}; failing open, canonical line still written",
+                    ctx.workUnit.id,
+                    e,
+                )
+                true
+            }
+            if (keep) {
+                try {
+                    writer.write(ctx)
+                } catch (e: Exception) {
+                    libraryLogger.warn(
+                        "writer threw for work unit {}; canonical line dropped, request unaffected",
+                        ctx.workUnit.id,
+                        e,
+                    )
+                }
+            }
         }
 
         try {

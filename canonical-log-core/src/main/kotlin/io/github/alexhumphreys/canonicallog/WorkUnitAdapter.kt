@@ -12,10 +12,10 @@ package io.github.alexhumphreys.canonicallog
  * **Adapters must not throw.** Both [describe] and [enrich] are called by
  * `withCanonicalLog{,Blocking}` as part of the work-unit lifecycle, and a throwing
  * adapter is a bug. The library is defensive against it (a throwing [enrich] records
- * `canonical_log_enrich_error` on the canonical line and may propagate the exception),
- * but treat that as a backstop, not a contract — adapter implementations should
- * read inputs that are guaranteed-valid by their caller and write fields that are
- * guaranteed-formattable.
+ * `canonical_log_enrich_error` on the canonical line and logs a WARN; the block's
+ * result is never replaced), but treat that as a backstop, not a contract — adapter
+ * implementations should read inputs that are guaranteed-valid by their caller and
+ * write fields that are guaranteed-formattable.
  */
 public interface WorkUnitAdapter<T> {
     /**

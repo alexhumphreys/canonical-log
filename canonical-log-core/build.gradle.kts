@@ -4,4 +4,5 @@ dependencies {
 
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.kotest.property)
+    testImplementation(libs.logback.classic)
 }

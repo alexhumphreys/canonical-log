@@ -18,6 +18,10 @@ import io.github.alexhumphreys.canonicallog.CanonicalLogContext
  * doing any of the work-unit bookkeeping (e.g. health probes), prefer
  * `canonical-log.http.exclude-paths` — the sampler runs after the request has
  * already paid for context creation and enrichment.
+ *
+ * A throwing sampler fails open: the exception is caught and WARN-logged to the
+ * `io.github.alexhumphreys.canonicallog` logger, the line is still written, and
+ * the request is unaffected.
  */
 public fun interface CanonicalLogSampler {
     public fun shouldEmit(context: CanonicalLogContext): Boolean

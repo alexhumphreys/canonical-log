@@ -3,17 +3,27 @@ package io.github.alexhumphreys.canonicallog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+
+/**
+ * Logger for the library's own failure reporting (a throwing emit or enrich). Named
+ * after the package rather than a class so adopters can target it with one config line.
+ */
+private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
 
 /**
  * The hand-off the entry point uses to publish the finalized canonical line.
  *
- * **`emit` must not throw.** By the time it runs, the work unit is already finalized
- * — the block returned (or threw), the adapter's `enrich` ran, and the threadlocal
- * has been restored. A throwing emit is a wiring bug at the entry-point level (the
- * canonical sink itself failed). The library does not attempt to recover: the
- * exception propagates out of `withCanonicalLog{,Blocking}` and replaces the block's
- * result. If the block had already thrown, the emit exception will replace *that*
- * (unhelpfully) — so keep emit implementations dead simple.
+ * **`emit` is expected not to throw.** By the time it runs, the work unit is already
+ * finalized — the block returned (or threw), the adapter's `enrich` ran, and the
+ * threadlocal has been restored. A throwing emit is a wiring bug at the entry-point
+ * level (the canonical sink itself failed). But telemetry must never fail the
+ * operation it observes: if emit throws an [Exception] anyway, the library catches
+ * it, logs one WARN to the `io.github.alexhumphreys.canonicallog` slf4j logger
+ * (including the work unit id and the exception), and then returns the block's
+ * result / rethrows the block's exception as normal. The canonical line is lost;
+ * the WARN is the only record. [Error]s still propagate — see the
+ * catch-`Exception`-not-`Error` rationale in [withCanonicalLogBlocking].
  */
 public typealias EmitFn = (CanonicalLogContext) -> Unit
 
@@ -37,12 +47,13 @@ public typealias EmitFn = (CanonicalLogContext) -> Unit
  *
  * **Adapter exceptions:** `WorkUnitAdapter.enrich` is expected not to throw —
  * it's library-author code, not adopter code, and a throwing adapter is a bug.
- * As a defensive guarantee: if it does throw, the failure is recorded in the
- * canonical line itself via `canonical_log_enrich_error: true` and
- * `canonical_log_enrich_error_class: <fqcn>`. If the block succeeded, the enrich
- * exception propagates to the caller (something is genuinely broken). If the
- * block also threw, the block's exception wins; the enrich failure is captured
- * only via the marker fields on the canonical line.
+ * As a defensive guarantee: if it does throw an [Exception], the failure is
+ * recorded in the canonical line itself via `canonical_log_enrich_error: true` and
+ * `canonical_log_enrich_error_class: <fqcn>`, one WARN is logged to the
+ * `io.github.alexhumphreys.canonicallog` logger, and the block's result is
+ * returned (or its exception rethrown) as normal — telemetry failures never
+ * replace the operation's result. The same policy covers a throwing [emit];
+ * see [EmitFn].
  */
 @OptIn(DelicateCanonicalLogApi::class)
 public fun <T, R> withCanonicalLogBlocking(
@@ -71,10 +82,14 @@ public fun <T, R> withCanonicalLogBlocking(
         onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
         onFailure = { Outcome.Threw(elapsedMs(startNs), it) },
     )
-    val enrichExceptionToPropagate = runEnrich(adapter, ctx, input, outcome, blockResult.isSuccess)
-    threadLocalContext.set(previous)
-    emit(ctx)
-    if (enrichExceptionToPropagate != null) throw enrichExceptionToPropagate
+    // The finally guards the threadlocal against an Error escaping enrich (Exceptions
+    // are swallowed inside runEnrich; Errors propagate per the rationale above).
+    try {
+        runEnrich(adapter, ctx, input, outcome)
+    } finally {
+        threadLocalContext.set(previous)
+    }
+    safeEmit(emit, ctx)
     return blockResult.getOrThrow()
 }
 
@@ -137,9 +152,8 @@ public suspend fun <T, R> withCanonicalLog(
             onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
             onFailure = { Outcome.Threw(elapsedMs(startNs), it) },
         )
-        val enrichExceptionToPropagate = runEnrich(adapter, ctx, input, outcome, blockResult.isSuccess)
-        emit(ctx)
-        if (enrichExceptionToPropagate != null) throw enrichExceptionToPropagate
+        runEnrich(adapter, ctx, input, outcome)
+        safeEmit(emit, ctx)
         blockResult.getOrThrow()
     }
 }
@@ -176,17 +190,30 @@ private fun <T> runEnrich(
     ctx: CanonicalLogContext,
     input: T,
     outcome: Outcome,
-    blockSucceeded: Boolean,
-): Throwable? = try {
-    adapter.enrich(ctx, input, outcome)
-    null
-} catch (enrichEx: Throwable) {
-    ctx.put("canonical_log_enrich_error", true)
-    ctx.put("canonical_log_enrich_error_class", enrichEx::class.qualifiedName ?: "unknown")
-    // If the block succeeded, the enrich exception is the only failure signal — propagate
-    // it. If the block failed too, its exception is more useful to the caller; the enrich
-    // failure is captured only via the marker fields on the canonical line.
-    if (blockSucceeded) enrichEx else null
+) {
+    try {
+        adapter.enrich(ctx, input, outcome)
+    } catch (enrichEx: Exception) {
+        ctx.put("canonical_log_enrich_error", true)
+        ctx.put("canonical_log_enrich_error_class", enrichEx::class.qualifiedName ?: "unknown")
+        libraryLogger.warn(
+            "adapter.enrich threw for work unit {}; failure recorded on the canonical line, block result unaffected",
+            ctx.workUnit.id,
+            enrichEx,
+        )
+    }
+}
+
+private fun safeEmit(emit: EmitFn, ctx: CanonicalLogContext) {
+    try {
+        emit(ctx)
+    } catch (emitEx: Exception) {
+        libraryLogger.warn(
+            "emit threw for work unit {}; canonical line dropped, block result unaffected",
+            ctx.workUnit.id,
+            emitEx,
+        )
+    }
 }
 
 private fun elapsedMs(startNs: Long): Long = (System.nanoTime() - startNs) / 1_000_000

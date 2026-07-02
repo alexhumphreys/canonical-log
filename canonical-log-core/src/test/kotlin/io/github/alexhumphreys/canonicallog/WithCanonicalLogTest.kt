@@ -1,9 +1,15 @@
 package io.github.alexhumphreys.canonicallog
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger as LogbackLogger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import org.slf4j.LoggerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,6 +39,23 @@ private class ThrowingEnrichAdapter(private val toThrow: Throwable) : WorkUnitAd
         enrichCalls++
         throw toThrow
     }
+}
+
+/**
+ * Capture the library's own WARN reporting (swallowed emit/enrich failures) on the
+ * `io.github.alexhumphreys.canonicallog` logger — same ListAppender pattern as the
+ * starter's `CanonicalLogFilterTest`.
+ */
+private fun attachLibraryWarnAppender(): ListAppender<ILoggingEvent> {
+    val appender = ListAppender<ILoggingEvent>().also { it.start() }
+    val logger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog") as LogbackLogger
+    logger.addAppender(appender)
+    logger.level = Level.WARN
+    return appender
+}
+
+private fun detachLibraryWarnAppender(appender: ListAppender<ILoggingEvent>) {
+    (LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog") as LogbackLogger).detachAppender(appender)
 }
 
 @OptIn(DelicateCanonicalLogApi::class)
@@ -126,33 +149,66 @@ class WithCanonicalLogTest : DescribeSpec({
             adapter.calls shouldBe 1
         }
 
-        it("if adapter.enrich throws on success, that exception propagates and the canonical line is marked") {
-            var snap: Map<String, Any> = emptyMap()
-            val enrichEx = IllegalStateException("enrich blew up")
-            val adapter = ThrowingEnrichAdapter(enrichEx)
+        it("if adapter.enrich throws on success, the block result is returned, the line is marked, and a WARN is logged") {
+            val appender = attachLibraryWarnAppender()
+            try {
+                var snap: Map<String, Any> = emptyMap()
+                val adapter = ThrowingEnrichAdapter(IllegalStateException("enrich blew up"))
 
-            val ex = runCatching {
-                withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) { "ok" }
-            }.exceptionOrNull()
+                val result = withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) { "ok" }
 
-            adapter.enrichCalls shouldBe 1
-            ex shouldBe enrichEx
-            snap["canonical_log_enrich_error"] shouldBe true
-            snap["canonical_log_enrich_error_class"] shouldBe "java.lang.IllegalStateException"
-            currentCanonicalContext() shouldBe null
+                result shouldBe "ok"
+                adapter.enrichCalls shouldBe 1
+                snap["canonical_log_enrich_error"] shouldBe true
+                snap["canonical_log_enrich_error_class"] shouldBe "java.lang.IllegalStateException"
+                currentCanonicalContext() shouldBe null
+                val warn = appender.list.single { it.level == Level.WARN }
+                warn.formattedMessage shouldContain "wu"
+            } finally {
+                detachLibraryWarnAppender(appender)
+            }
         }
 
-        it("a throwing emit (blocking variant) propagates and the threadlocal is still restored") {
-            val emitEx = IllegalStateException("emit blew up")
-            val ex = runCatching {
-                withCanonicalLogBlocking<String, String>(nullAdapter, "wu", { throw emitEx }) { "ok" }
-            }.exceptionOrNull()
+        it("a throwing emit (blocking variant) is swallowed: block result returned, WARN logged, threadlocal restored") {
+            val appender = attachLibraryWarnAppender()
+            try {
+                val result = withCanonicalLogBlocking<String, String>(
+                    nullAdapter,
+                    "wu",
+                    { throw IllegalStateException("emit blew up") },
+                ) { "ok" }
 
-            ex shouldBe emitEx
-            // Threadlocal is restored before emit runs, so even a throwing emit leaves
-            // it clean — pinning this so a future refactor that moves the restore
-            // doesn't silently regress.
-            threadLocalContext.get() shouldBe null
+                result shouldBe "ok"
+                // Threadlocal is restored before emit runs, so even a throwing emit leaves
+                // it clean — pinning this so a future refactor that moves the restore
+                // doesn't silently regress.
+                threadLocalContext.get() shouldBe null
+                val warn = appender.list.single { it.level == Level.WARN }
+                warn.formattedMessage shouldContain "wu"
+                warn.throwableProxy?.message shouldBe "emit blew up"
+            } finally {
+                detachLibraryWarnAppender(appender)
+            }
+        }
+
+        it("a throwing emit never replaces the block's exception: the block's exception is rethrown") {
+            val appender = attachLibraryWarnAppender()
+            try {
+                val blockEx = IllegalArgumentException("block blew up")
+                val ex = runCatching {
+                    withCanonicalLogBlocking<String, String>(
+                        nullAdapter,
+                        "wu",
+                        { throw IllegalStateException("emit blew up") },
+                    ) { throw blockEx }
+                }.exceptionOrNull()
+
+                ex shouldBe blockEx
+                threadLocalContext.get() shouldBe null
+                appender.list.count { it.level == Level.WARN } shouldBe 1
+            } finally {
+                detachLibraryWarnAppender(appender)
+            }
         }
 
         it("Error from block propagates without being captured: no enrich, no emit, threadlocal restored") {
@@ -304,16 +360,25 @@ class WithCanonicalLogTest : DescribeSpec({
             emitCount.get() shouldBe 1
         }
 
-        it("a throwing emit (suspend variant) propagates and the threadlocal is still restored") {
-            val emitEx = IllegalStateException("emit blew up")
-            val ex = runCatching {
-                runBlocking {
-                    withCanonicalLog<String, String>(nullAdapter, "wu", { throw emitEx }) { "ok" }
+        it("a throwing emit (suspend variant) is swallowed: block result returned, WARN logged, threadlocal restored") {
+            val appender = attachLibraryWarnAppender()
+            try {
+                val result = runBlocking {
+                    withCanonicalLog<String, String>(
+                        nullAdapter,
+                        "wu",
+                        { throw IllegalStateException("emit blew up") },
+                    ) { "ok" }
                 }
-            }.exceptionOrNull()
 
-            ex shouldBe emitEx
-            threadLocalContext.get() shouldBe null
+                result shouldBe "ok"
+                threadLocalContext.get() shouldBe null
+                val warn = appender.list.single { it.level == Level.WARN }
+                warn.formattedMessage shouldContain "wu"
+                warn.throwableProxy?.message shouldBe "emit blew up"
+            } finally {
+                detachLibraryWarnAppender(appender)
+            }
         }
 
         it("if both block and adapter.enrich throw in the suspend variant, block exception is primary; enrich captured on the canonical line") {

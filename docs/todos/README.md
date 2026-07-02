@@ -13,9 +13,7 @@ the file says to update). If implementation diverges from the file's design, rec
 
 ## Priority: agreed next up (in order)
 
-| # | Item | One-liner |
-|---|------|-----------|
-| [004](004-non-throwing-emit.md) | Non-throwing emit | Sink failure must not replace the block's result (consistency with `aa34166`) |
+*(empty — pick from the backlog)*
 
 ## Backlog
 
@@ -36,4 +34,4 @@ the file says to update). If implementation diverges from the file's design, rec
 | [017](017-logstash-writer-module-split.md) | Logstash writer split | Stop forcing logstash-logback-encoder on every adopter |
 | [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
 
-Dependencies: 010 and 011 are design-first items. (001–003, which other items depended on, landed 2026-07-02.)
+Dependencies: 010 and 011 are design-first items. (001–004, which other items depended on, landed 2026-07-02.)

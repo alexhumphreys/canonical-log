@@ -59,6 +59,20 @@ private fun detachAppender(appender: ListAppender<ILoggingEvent>) {
     (LoggerFactory.getLogger("canonical") as LogbackLogger).detachAppender(appender)
 }
 
+/** Capture the swallow-and-warn reporting for throwing enrich/sampler/writer. */
+private fun attachLibraryWarnAppender(): ListAppender<ILoggingEvent> {
+    val appender = ListAppender<ILoggingEvent>().also { it.start() }
+    val logger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog") as LogbackLogger
+    logger.addAppender(appender)
+    logger.level = Level.WARN
+    return appender
+}
+
+private fun detachLibraryWarnAppender(appender: ListAppender<ILoggingEvent>) {
+    (LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog") as LogbackLogger)
+        .detachAppender(appender)
+}
+
 class CanonicalLogFilterTest : DescribeSpec({
 
     describe("CanonicalLogFilter") {
@@ -183,6 +197,73 @@ class CanonicalLogFilterTest : DescribeSpec({
                 lastCanonicalSnapshot(appender)["error"] shouldBe true
             } finally {
                 detachAppender(appender)
+            }
+        }
+
+        it("a throwing writer is swallowed: request completes, WARN logged, line dropped") {
+            val canonical = attachAppender()
+            val warns = attachLibraryWarnAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/ok")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val filter = CanonicalLogFilter(writer = { error("sink blew up") })
+
+                // Must not throw — the writer failure never reaches the caller.
+                filter.doFilter(req, res) { _, _ -> }
+
+                canonical.list.count { it.loggerName == "canonical" } shouldBe 0
+                warns.list.count { it.level == Level.WARN } shouldBe 1
+                io.github.alexhumphreys.canonicallog.currentCanonicalContext() shouldBe null
+            } finally {
+                detachAppender(canonical)
+                detachLibraryWarnAppender(warns)
+            }
+        }
+
+        it("a throwing sampler fails open: line still written, WARN logged, request completes") {
+            val canonical = attachAppender()
+            val warns = attachLibraryWarnAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/ok")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val filter = CanonicalLogFilter(sampler = { error("sampler blew up") })
+
+                filter.doFilter(req, res) { _, _ -> }
+
+                canonical.list.count { it.loggerName == "canonical" } shouldBe 1
+                warns.list.count { it.level == Level.WARN } shouldBe 1
+            } finally {
+                detachAppender(canonical)
+                detachLibraryWarnAppender(warns)
+            }
+        }
+
+        it("a throwing adapter.enrich is swallowed: line still written with the enrich-error markers, WARN logged") {
+            val canonical = attachAppender()
+            val warns = attachLibraryWarnAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/ok")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val throwingAdapter = object : io.github.alexhumphreys.canonicallog.WorkUnitAdapter<HttpExchange> {
+                    private val delegate = HttpWorkUnitAdapter()
+                    override fun describe(input: HttpExchange) = delegate.describe(input)
+                    override fun enrich(
+                        ctx: io.github.alexhumphreys.canonicallog.CanonicalLogContext,
+                        input: HttpExchange,
+                        outcome: io.github.alexhumphreys.canonicallog.Outcome,
+                    ): Unit = error("enrich blew up")
+                }
+
+                CanonicalLogFilter(adapter = throwingAdapter).doFilter(req, res) { _, _ -> }
+
+                canonical.list.count { it.loggerName == "canonical" } shouldBe 1
+                val snap = lastCanonicalSnapshot(canonical)
+                snap["canonical_log_enrich_error"] shouldBe true
+                snap["canonical_log_enrich_error_class"] shouldBe "java.lang.IllegalStateException"
+                warns.list.count { it.level == Level.WARN } shouldBe 1
+            } finally {
+                detachAppender(canonical)
+                detachLibraryWarnAppender(warns)
             }
         }
 

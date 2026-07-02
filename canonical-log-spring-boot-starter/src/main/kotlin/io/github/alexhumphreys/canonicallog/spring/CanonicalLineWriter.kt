@@ -8,12 +8,13 @@ import org.slf4j.LoggerFactory
  * The sink [CanonicalLogFilter] hands the finalized work unit to — the starter-level
  * counterpart of core's `EmitFn`.
  *
- * **`write` must not throw.** Same contract as core's `EmitFn`: by the time it runs the
- * work unit is already finalized (handler done, adapter enriched, threadlocal restored),
- * so a throwing writer is a wiring bug at the sink level. The filter does not attempt to
- * recover — on the synchronous path the exception replaces the handler's result; on the
- * async path it surfaces from an [jakarta.servlet.AsyncListener] callback where the
- * container's handling is unspecified. Keep implementations dead simple.
+ * **`write` is expected not to throw.** Same contract as core's `EmitFn`: by the time it
+ * runs the work unit is already finalized (handler done, adapter enriched, threadlocal
+ * restored), so a throwing writer is a wiring bug at the sink level. But telemetry must
+ * never fail the request it observes: if `write` throws an [Exception] anyway, the filter
+ * catches it, WARN-logs it to the `io.github.alexhumphreys.canonicallog` logger, and the
+ * request completes as normal. The canonical line is dropped; the WARN is the only record.
+ * Keep implementations dead simple.
  *
  * Register a bean of this type to route canonical lines somewhere other than the default
  * logstash `"canonical"` logger (log4j2, plain JSON, Kafka, ...) — the auto-configuration
