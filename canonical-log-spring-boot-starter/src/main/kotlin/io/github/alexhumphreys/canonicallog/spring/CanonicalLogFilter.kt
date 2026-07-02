@@ -10,6 +10,7 @@ import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -44,12 +45,28 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    [HttpWorkUnitAdapter] and then puts its extra fields.
  *  - [writer] is the sink for the finalized line; defaults to the logstash
  *    `"canonical"` logger via [LogstashCanonicalLineWriter].
+ *
+ * Two knobs control which requests produce a line:
+ *  - [excludePaths] (ant-style patterns matched against `request.requestURI`, the
+ *    same value `url_path` reports) skips the work unit entirely — no context, no
+ *    line. Use for health probes and other traffic that should cost nothing.
+ *  - [sampler] is consulted after [WorkUnitAdapter.enrich], so it sees the complete
+ *    line (status, duration, error fields) and can implement "always keep errors,
+ *    sample healthy 200s" — see [CanonicalLogSampler]. Defaults to emit-all.
+ *    A throwing sampler currently propagates like a throwing [writer].
  */
 @OptIn(DelicateCanonicalLogApi::class)
 public class CanonicalLogFilter(
     private val adapter: WorkUnitAdapter<HttpExchange> = HttpWorkUnitAdapter(),
     private val writer: CanonicalLineWriter = LogstashCanonicalLineWriter(),
+    private val excludePaths: List<String> = emptyList(),
+    private val sampler: CanonicalLogSampler = CanonicalLogSampler { true },
 ) : OncePerRequestFilter() {
+
+    private val pathMatcher = AntPathMatcher()
+
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean =
+        excludePaths.any { pathMatcher.match(it, request.requestURI) }
 
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -68,7 +85,7 @@ public class CanonicalLogFilter(
                 Outcome.Completed(elapsedMs(startNs))
             }
             adapter.enrich(ctx, exchange, outcome)
-            writer.write(ctx)
+            if (sampler.shouldEmit(ctx)) writer.write(ctx)
         }
 
         try {

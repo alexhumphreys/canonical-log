@@ -25,6 +25,12 @@ private class CapturingLineWriter : CanonicalLineWriter {
     }
 }
 
+/** Sampler bean that keeps only lines carrying `error=true`. */
+private class ErrorsOnlySampler : CanonicalLogSampler {
+    override fun shouldEmit(context: CanonicalLogContext): Boolean =
+        context.snapshot()["error"] == true
+}
+
 /**
  * The compose-don't-subclass pattern from the filter KDoc: delegate describe/enrich
  * to [HttpWorkUnitAdapter], then put extra uniform fields.
@@ -104,6 +110,40 @@ class CanonicalLogAutoConfigurationTest : DescribeSpec({
                     // Delegation to HttpWorkUnitAdapter still supplies the uniform HTTP fields.
                     snapshot["http_request_method"] shouldBe "GET"
                     snapshot["http_response_status_code"] shouldBe 200
+                }
+        }
+
+        it("binds canonical-log.http.exclude-paths and excludes matching requests") {
+            runner
+                .withPropertyValues("canonical-log.http.exclude-paths=/actuator/**")
+                .withBean(CapturingLineWriter::class.java)
+                .run { ctx ->
+                    val filter = ctx.getBean(CanonicalLogFilter::class.java)
+                    val writer = ctx.getBean(CapturingLineWriter::class.java)
+
+                    val probe = MockHttpServletRequest("GET", "/actuator/health")
+                    filter.doFilter(probe, MockHttpServletResponse().apply { status = 200 }) { _, _ -> }
+                    writer.snapshots.size shouldBe 0
+
+                    val real = MockHttpServletRequest("GET", "/posts/1")
+                    filter.doFilter(real, MockHttpServletResponse().apply { status = 200 }) { _, _ -> }
+                    writer.snapshots.size shouldBe 1
+                    writer.snapshots.single()["url_path"] shouldBe "/posts/1"
+                }
+        }
+
+        it("injects a user CanonicalLogSampler bean into the filter") {
+            runner
+                .withBean(ErrorsOnlySampler::class.java)
+                .withBean(CapturingLineWriter::class.java)
+                .run { ctx ->
+                    val filter = ctx.getBean(CanonicalLogFilter::class.java)
+                    val writer = ctx.getBean(CapturingLineWriter::class.java)
+
+                    val req = MockHttpServletRequest("GET", "/healthy-200")
+                    filter.doFilter(req, MockHttpServletResponse().apply { status = 200 }) { _, _ -> }
+                    // The default sampler emits everything; the user bean drops this line.
+                    writer.snapshots.size shouldBe 0
                 }
         }
     }

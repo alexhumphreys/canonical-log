@@ -129,6 +129,63 @@ class CanonicalLogFilterTest : DescribeSpec({
             io.github.alexhumphreys.canonicallog.currentCanonicalContext() shouldBe null
         }
 
+        it("skips excluded paths entirely: chain runs, no context, no line") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/actuator/health")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val filter = CanonicalLogFilter(excludePaths = listOf("/actuator/**"))
+                var chainInvoked = false
+                var contextDuringChain: Any? = Any()
+                filter.doFilter(req, res) { _, _ ->
+                    chainInvoked = true
+                    contextDuringChain = io.github.alexhumphreys.canonicallog.currentCanonicalContext()
+                }
+                chainInvoked shouldBe true
+                contextDuringChain shouldBe null
+                appender.list.count { it.loggerName == "canonical" } shouldBe 0
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("still logs non-excluded paths when excludePaths is set") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/posts/1")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val filter = CanonicalLogFilter(excludePaths = listOf("/actuator/**"))
+                filter.doFilter(req, res) { _, _ -> }
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("sampler sees the enriched line: drops a healthy 200, keeps a thrown failure") {
+            val appender = attachAppender()
+            try {
+                val errorsOnly = CanonicalLogSampler { ctx -> ctx.snapshot()["error"] == true }
+
+                val okReq = MockHttpServletRequest("GET", "/ok")
+                val okRes = MockHttpServletResponse().apply { status = 200 }
+                CanonicalLogFilter(sampler = errorsOnly).doFilter(okReq, okRes) { _, _ -> }
+                appender.list.count { it.loggerName == "canonical" } shouldBe 0
+
+                val boomReq = MockHttpServletRequest("GET", "/boom")
+                val boomRes = MockHttpServletResponse().apply { status = 500 }
+                runCatching {
+                    CanonicalLogFilter(sampler = errorsOnly).doFilter(boomReq, boomRes) { _, _ ->
+                        error("kaboom")
+                    }
+                }
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+                lastCanonicalSnapshot(appender)["error"] shouldBe true
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
         it("emits exactly once when a synchronous handler throws") {
             val appender = attachAppender()
             try {

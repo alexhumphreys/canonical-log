@@ -47,7 +47,7 @@ The accumulator lives for the lifetime of one work unit. Contributors (libraries
 - `canonical-log-jdbc` — `datasource-proxy` `QueryExecutionListener` that contributes `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count`. Framework-agnostic.
 - `canonical-log-okhttp-spring-boot-starter` — auto-config providing an `OkHttpClientBuilderCustomizer` bean that adopters apply to their own `OkHttpClient.Builder` constructions. **Unlike the HTTP filter and JDBC starters, this one requires adopter participation** because `OkHttpClient` is configured at builder time rather than at bean construction. Opt-out: `canonical-log.okhttp.enabled=false`.
 - `canonical-log-jdbc-spring-boot-starter` — auto-config wiring the JDBC contributor (uses `@JvmStatic` companion-object `@Bean` for the BeanPostProcessor per Spring's recommendation).
-- `canonical-log-spring-boot-starter` — umbrella starter that pulls in the others plus the HTTP request adapter (servlet filter that creates the work unit, captures `http_request_method` / `http_route` / `http_response_status_code` / `http_request_duration_ms`, emits the line).
+- `canonical-log-spring-boot-starter` — umbrella starter that pulls in the others plus the HTTP request adapter (servlet filter that creates the work unit, captures `http_request_method` / `http_route` / `http_response_status_code` / `http_request_duration_ms`, emits the line). The filter's two collaborators are injectable seams resolved by the auto-config via `ObjectProvider`: a user `WorkUnitAdapter<HttpExchange>` bean replaces the default `HttpWorkUnitAdapter` (compose with it, don't subclass — delegate describe/enrich, then put extra fields), and a user `CanonicalLineWriter` bean replaces the default logstash sink (`LogstashCanonicalLineWriter`). Deliberately not `@ConditionalOnMissingBean` on default beans: CoMB matches raw types, so an adapter bean for a different work-unit type would wrongly suppress the HTTP default. Two knobs control which requests produce a line: `canonical-log.http.exclude-paths` (ant-style patterns matched against `request.requestURI` — consistent with `url_path`; matching requests skip the work unit entirely via `shouldNotFilter`, so probes like `/actuator/**` cost nothing) and a user `CanonicalLogSampler` bean (also resolved via `ObjectProvider`, default emit-all; consulted *after* `adapter.enrich` so the predicate sees status/duration/error and can implement "always keep errors, sample healthy 200s at 1%"). No rate-based built-in sampler yet — the hook is the feature; sampler exceptions currently propagate like a throwing writer until `004-non-throwing-emit` lands.
 - Sample app — exercises everything.
 
 The split between `canonical-log-<lib>` and `canonical-log-<lib>-spring-boot-starter` follows Java ecosystem convention: contributors are framework-agnostic, starters are the integration glue. This keeps the door open for Quarkus/Micronaut starters later without duplication.
@@ -230,6 +230,12 @@ Stack: JDK 25, Gradle 9.5, Spring Boot 4, Kotlin 2.2.20.
 
 ## What's next
 
+**Actionable items live in `docs/todos/`** — one self-contained file per work item (problem,
+agreed design, acceptance criteria), written to be implementable in a fresh session from just
+that file. See `docs/todos/README.md` for the index and priority order. The sections below
+record the longer-horizon picture; where a todo file exists for an item, the todo file is the
+authoritative spec.
+
 ### Open semantics questions (sketch before implementing)
 
 - **Cancellation outcome.** Coroutine cancelled by request timeout / client disconnect: what's the canonical line's outcome shape, what happens to in-flight contributions, how does it interact with `AsyncListener.onTimeout`? See "Subtle gotchas".
@@ -253,7 +259,7 @@ Ordered roughly by likely usefulness:
 - **WebFlux / Reactor support.** Verify the bridge works with `Mono`/`Flux` context propagation. May need a Reactor-specific context-element shim.
 - **Resilience4j contributor.** Retry counts, circuit breaker state transitions, bulkhead rejections — all mechanically uniform, bounded, useful.
 - **Micrometer tracing contributor.** For trace correlation: contribute `trace_id` and `span_id` if a span is active.
-- **`canonical-log-test` module.** See the Testing section for the intended shape. Trigger to un-defer is a third contributor (likely Kafka) needing the same testing pattern.
+- **`canonical-log-test` module.** Promoted by the 2026-07-02 design review — see `docs/todos/003-test-kit-module.md` for the authoritative spec (supersedes the trigger condition previously recorded here).
 - **LaunchDarkly contributor.** Flag evaluations during the work unit. Bounded cardinality if done right.
 - **Spring Security auth context contributor.** `auth_subject`, `auth_method`. Watch cardinality carefully.
 
@@ -261,7 +267,7 @@ Ordered roughly by likely usefulness:
 
 ### Deferred indefinitely (no plans, but worth recording)
 
-- Configuration DSL, sampling hooks, sensitive-value redaction hooks.
+- Configuration DSL, sensitive-value redaction hooks.
 - Cross-service propagation (pluggable propagator interface, W3C `traceparent` default, custom `request_chain` field).
 - Custom backpressure-aware appender (separate from the app's main appender, block-not-drop default, bounded-blocking with degraded local-file fallback).
 - Startup heartbeat endpoint (synthetic self-request through full filter chain to validate wiring at boot).
@@ -281,7 +287,7 @@ These have been considered and rejected. Don't add them without a new and compel
 - **Hiding distributed complexity behind a DSL.** Starters wire resilience patterns (Resilience4j, DLQ, retries) without hiding service boundaries. No "call this remote service like it's local" abstractions.
 - **Lists or nested objects in field values.** Decompose to count fields or delimited strings; objects never.
 - **PII redaction in core.** Operator concern. The library should make it easy to plug in, not opinionated about what's sensitive.
-- **Sampling in core.** Same reasoning. v0.2+ may add hooks; core stays simple.
+- **Sampling in core.** Same reasoning. The starter exposes the hook (`CanonicalLogSampler`, a post-enrich emit predicate — see the module layout section); core stays simple, and rate/policy decisions live in adopter code.
 - **OTel as a core dependency.** Optional sink module only.
 - **Field-name renaming hook.** Field names are deliberately fixed across the library — `http_request_method`, `db_execution_count`, etc. are the contract. No `FieldNameMapper` interface, no per-app config to rename `db_query_count` to `database_queries_total`. Reason: canonical log lines are designed to be queried with a single shape across services in the same observability stack; per-service renames would let two services emit semantically identical fields under different names, which defeats the point. Workarounds for adopters who need different names downstream: a logback encoder, a Logstash filter, or a thin transformation step in the log pipeline — all of which keep the rename out of the library and at the edge where the operator already controls the schema.
 

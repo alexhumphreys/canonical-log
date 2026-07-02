@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.core.Ordered
@@ -17,12 +18,14 @@ import org.springframework.core.Ordered
     havingValue = "true",
     matchIfMissing = true,
 )
+@EnableConfigurationProperties(CanonicalLogHttpProperties::class)
 public open class CanonicalLogAutoConfiguration {
 
     /**
      * User beans win over the defaults: a `WorkUnitAdapter<HttpExchange>` bean replaces
      * [HttpWorkUnitAdapter] (compose with it for extra uniform fields — see
-     * [CanonicalLogFilter]), a [CanonicalLineWriter] bean replaces the logstash sink.
+     * [CanonicalLogFilter]), a [CanonicalLineWriter] bean replaces the logstash sink,
+     * a [CanonicalLogSampler] bean replaces the emit-all default.
      *
      * Resolution uses [ObjectProvider], not `@ConditionalOnMissingBean` on default
      * beans: CoMB matches raw types, so a user's `WorkUnitAdapter` for a *different*
@@ -33,11 +36,15 @@ public open class CanonicalLogAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public open fun canonicalLogFilter(
+        properties: CanonicalLogHttpProperties,
         adapter: ObjectProvider<WorkUnitAdapter<HttpExchange>>,
         writer: ObjectProvider<CanonicalLineWriter>,
+        sampler: ObjectProvider<CanonicalLogSampler>,
     ): CanonicalLogFilter = CanonicalLogFilter(
         adapter = adapter.getIfAvailable { HttpWorkUnitAdapter() },
         writer = writer.getIfAvailable { LogstashCanonicalLineWriter() },
+        excludePaths = properties.excludePaths,
+        sampler = sampler.getIfAvailable { CanonicalLogSampler { true } },
     )
 
     @Bean
