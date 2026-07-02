@@ -1,5 +1,7 @@
 package io.github.alexhumphreys.canonicallog.spring
 
+import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -17,9 +19,26 @@ import org.springframework.core.Ordered
 )
 public open class CanonicalLogAutoConfiguration {
 
+    /**
+     * User beans win over the defaults: a `WorkUnitAdapter<HttpExchange>` bean replaces
+     * [HttpWorkUnitAdapter] (compose with it for extra uniform fields — see
+     * [CanonicalLogFilter]), a [CanonicalLineWriter] bean replaces the logstash sink.
+     *
+     * Resolution uses [ObjectProvider], not `@ConditionalOnMissingBean` on default
+     * beans: CoMB matches raw types, so a user's `WorkUnitAdapter` for a *different*
+     * work-unit type (e.g. Kafka) would wrongly suppress the HTTP default. ObjectProvider
+     * resolves against the full generic type, so only a `WorkUnitAdapter<HttpExchange>`
+     * bean is picked up here.
+     */
     @Bean
     @ConditionalOnMissingBean
-    public open fun canonicalLogFilter(): CanonicalLogFilter = CanonicalLogFilter()
+    public open fun canonicalLogFilter(
+        adapter: ObjectProvider<WorkUnitAdapter<HttpExchange>>,
+        writer: ObjectProvider<CanonicalLineWriter>,
+    ): CanonicalLogFilter = CanonicalLogFilter(
+        adapter = adapter.getIfAvailable { HttpWorkUnitAdapter() },
+        writer = writer.getIfAvailable { LogstashCanonicalLineWriter() },
+    )
 
     @Bean
     public open fun canonicalLogFilterRegistration(

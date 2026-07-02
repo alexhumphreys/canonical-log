@@ -3,14 +3,13 @@ package io.github.alexhumphreys.canonicallog.spring
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
 import io.github.alexhumphreys.canonicallog.Outcome
+import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import io.github.alexhumphreys.canonicallog.bindCurrentCanonicalContext
 import jakarta.servlet.AsyncEvent
 import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import net.logstash.logback.argument.StructuredArguments
-import org.slf4j.LoggerFactory
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -37,11 +36,20 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Single-emit invariant: an [AtomicBoolean] guard ensures at most one canonical
  * line per request, even if both `onError` and `onComplete` fire on the listener.
+ *
+ * Both collaborators are injectable (the auto-configuration resolves user beans):
+ *  - [adapter] describes/enriches the work unit. To add uniform fields (e.g. a tenant
+ *    ID from a header), compose rather than subclass — write a
+ *    `WorkUnitAdapter<HttpExchange>` that delegates `describe`/`enrich` to
+ *    [HttpWorkUnitAdapter] and then puts its extra fields.
+ *  - [writer] is the sink for the finalized line; defaults to the logstash
+ *    `"canonical"` logger via [LogstashCanonicalLineWriter].
  */
 @OptIn(DelicateCanonicalLogApi::class)
-public class CanonicalLogFilter : OncePerRequestFilter() {
-    private val canonicalLogger = LoggerFactory.getLogger("canonical")
-    private val adapter = HttpWorkUnitAdapter()
+public class CanonicalLogFilter(
+    private val adapter: WorkUnitAdapter<HttpExchange> = HttpWorkUnitAdapter(),
+    private val writer: CanonicalLineWriter = LogstashCanonicalLineWriter(),
+) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -60,7 +68,7 @@ public class CanonicalLogFilter : OncePerRequestFilter() {
                 Outcome.Completed(elapsedMs(startNs))
             }
             adapter.enrich(ctx, exchange, outcome)
-            canonicalLogger.info("canonical", StructuredArguments.entries(ctx.snapshot()))
+            writer.write(ctx)
         }
 
         try {
