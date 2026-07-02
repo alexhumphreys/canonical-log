@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -229,6 +231,42 @@ class WithCanonicalLogTest : DescribeSpec({
                 withCanonicalLog(nullAdapter, "wu", { emitCount.incrementAndGet() }) { "ok" }
             }
             emitCount.get() shouldBe 1
+        }
+
+        it("waits for un-joined structured children before emitting: their contributions land") {
+            var snap: Map<String, Any> = emptyMap()
+            runBlocking {
+                withCanonicalLog(nullAdapter, "wu", { snap = it.snapshot() }) {
+                    // Deliberately not joined: the delay makes the block return well
+                    // before the child writes, so an emit that doesn't await children
+                    // would reliably miss the contribution.
+                    launch(Dispatchers.IO) {
+                        delay(100)
+                        CanonicalLog.put("unjoined_child", "yes")
+                    }
+                    "ok"
+                }
+            }
+            snap["unjoined_child"] shouldBe "yes"
+        }
+
+        it("a failing un-joined structured child yields Outcome.Threw, not a Completed line plus an exception") {
+            var snap: Map<String, Any> = emptyMap()
+            val ex = runCatching {
+                runBlocking {
+                    withCanonicalLog(nullAdapter, "wu", { snap = it.snapshot() }) {
+                        launch(Dispatchers.IO) {
+                            delay(100)
+                            error("child boom")
+                        }
+                        "ok"
+                    }
+                }
+            }.exceptionOrNull()
+
+            ex.shouldBeInstanceOf<IllegalStateException>()
+            ex.message shouldBe "child boom"
+            snap["outcome"] shouldBe "Threw"
         }
 
         it("calls emit exactly once on exception and rethrows") {

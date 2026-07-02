@@ -83,11 +83,17 @@ public fun <T, R> withCanonicalLogBlocking(
  *
  * The [block] is invoked with a [CoroutineScope] receiver. This is load-bearing: it
  * means `async`, `launch`, and other [CoroutineScope] extensions called inside the
- * block resolve against the scope created by `withContext(CanonicalLogElement)`,
- * not against an outer scope (e.g. the test runner's `TestScope` or `runBlocking`'s
- * scope). Without the receiver, bare `async { ... }` inside the block silently
- * inherits the outer context, which has no canonical element, and contributions from
- * inside the async coroutine are lost.
+ * block resolve against a scope that carries the [CanonicalLogElement], not against
+ * an outer scope (e.g. the test runner's `TestScope` or `runBlocking`'s scope).
+ * Without the receiver, bare `async { ... }` inside the block silently inherits the
+ * outer context, which has no canonical element, and contributions from inside the
+ * async coroutine are lost.
+ *
+ * The receiver is an inner `coroutineScope`, so structured children the block
+ * launches but never joins are awaited *before* the outcome is computed and the
+ * canonical line is emitted: their contributions land in the snapshot, and a
+ * failing child makes the work unit report [Outcome.Threw] rather than emitting
+ * `Completed` while the caller sees the child's exception.
  *
  * Calling this inside an already-active work unit is **undefined**. Nested work
  * units are not yet supported (see CLAUDE.md).
@@ -115,8 +121,15 @@ public suspend fun <T, R> withCanonicalLog(
         // See [withCanonicalLogBlocking] for the rationale: Errors propagate; only
         // Exceptions become Outcome.Threw. The ThreadContextElement still cleans up
         // its threadlocal binding when the block escapes via Error.
+        //
+        // The inner coroutineScope is load-bearing: children the block launches on
+        // its receiver scope but never joins must complete before we compute the
+        // outcome and emit. Without it, enrich/emit run inside the withContext
+        // lambda — *before* withContext joins its children — so an un-joined
+        // launch races with emit (contributions lost) and a failing child would
+        // surface to the caller after a canonical line already claimed Completed.
         val blockResult: Result<R> = try {
-            Result.success(block(ctx))
+            Result.success(coroutineScope { block(ctx) })
         } catch (e: Exception) {
             Result.failure(e)
         }
