@@ -142,6 +142,33 @@ class JdbcCanonicalAutoConfigurationTest : DescribeSpec({
                 }
         }
 
+        it("does not double-instrument through a delegating DataSource bean") {
+            // Common production shape: an inner pool bean plus an outer bean that
+            // delegates to it (LazyConnectionDataSourceProxy, TransactionAware...,
+            // retry wrappers). The inner bean is post-processed (and wrapped) first;
+            // wrapping the outer as well would double every db_* count.
+            ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(JdbcCanonicalAutoConfiguration::class.java))
+                .withBean("innerDataSource", DataSource::class.java, { hikariDataSource(postgres) })
+                .withUserConfiguration(DelegatingOuterConfig::class.java)
+                .run { ctx ->
+                    // Inner got wrapped; outer was left untouched because our listener
+                    // is already reachable down its delegation chain.
+                    (ctx.getBean("innerDataSource") is ProxyDataSource) shouldBe true
+                    val outer = ctx.getBean("outerDataSource", DataSource::class.java)
+                    (outer is ProxyDataSource) shouldBe false
+
+                    var snap: Map<String, Any> = emptyMap()
+                    withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                        outer.connection.use { c ->
+                            c.createStatement().use { it.execute("SELECT 1") }
+                        }
+                    }
+                    snap["db_query_count"] shouldBe 1L
+                    snap["db_execution_count"] shouldBe 1L
+                }
+        }
+
         it("opts out when canonical-log.jdbc.enabled=false") {
             runner().withPropertyValues("canonical-log.jdbc.enabled=false").run { ctx ->
                 ctx.containsBean("jdbcCanonicalBeanPostProcessor") shouldBe false
@@ -152,6 +179,14 @@ class JdbcCanonicalAutoConfigurationTest : DescribeSpec({
         }
     }
 })
+
+@org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+private class DelegatingOuterConfig {
+    @org.springframework.context.annotation.Bean
+    fun outerDataSource(
+        @org.springframework.beans.factory.annotation.Qualifier("innerDataSource") inner: DataSource,
+    ): DataSource = org.springframework.jdbc.datasource.DelegatingDataSource(inner)
+}
 
 private fun hikariDataSource(postgres: PostgreSQLContainer<*>): HikariDataSource = HikariDataSource().apply {
     jdbcUrl = postgres.jdbcUrl

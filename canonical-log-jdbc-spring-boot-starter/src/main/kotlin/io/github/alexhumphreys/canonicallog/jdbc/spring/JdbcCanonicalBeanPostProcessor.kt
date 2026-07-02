@@ -26,6 +26,22 @@ import javax.sql.DataSource
  * `DataSource` themselves via [withCanonicalLogging]), we leave the bean
  * untouched.
  *
+ * **Delegating `DataSource` beans are not double-instrumented.** An application
+ * context often holds both an inner pool bean and an outer bean that delegates to
+ * it (`LazyConnectionDataSourceProxy`, `TransactionAwareDataSourceProxy`, retry
+ * wrappers). Since dependencies are post-processed first, the inner bean is
+ * already canonical-log-wrapped by the time the outer bean is processed — wrapping
+ * the outer too would double every `db_*` count. Before instrumenting, we walk the
+ * delegation chain ([ProxyDataSource.getDataSource], plus a duck-typed
+ * `getTargetDataSource()` for Spring's `DelegatingDataSource` family) and skip the
+ * bean if a [JdbcCanonicalListener] is already attached anywhere beneath it. The
+ * trade-off: for such stacks the instrumentation sits *below* the outer delegating
+ * wrapper, so its overhead is not included in `db_execution_duration_ms_total`.
+ * Known limitation: `AbstractRoutingDataSource` targets are not walked (they're a
+ * map, not a single delegate) — a routing bean over target *beans* still
+ * double-counts; exclude one side via `canonical-log.jdbc.enabled=false` or by
+ * not exposing the targets as beans.
+ *
  * **Concrete-type injection caveat.** Spring uses our return value as the bean
  * reference, so adopters who inject `@Autowired val ds: HikariDataSource` will
  * get a `BeanNotOfRequiredTypeException` after adding canonical-log. Inject the
@@ -36,13 +52,43 @@ public class JdbcCanonicalBeanPostProcessor : BeanPostProcessor, Ordered {
 
     override fun postProcessAfterInitialization(bean: Any, beanName: String): Any {
         if (bean !is DataSource) return bean
+        if (isAlreadyInstrumented(bean)) return bean
         if (bean is ProxyDataSource) {
-            val chain = bean.proxyConfig.queryListener
-            if (chain.listeners.none { it is JdbcCanonicalListener }) {
-                chain.addListener(JdbcCanonicalListener())
-            }
+            bean.proxyConfig.queryListener.addListener(JdbcCanonicalListener())
             return bean
         }
         return bean.withCanonicalLogging(name = beanName)
+    }
+
+    private fun isAlreadyInstrumented(root: DataSource): Boolean {
+        var current: DataSource? = root
+        var depth = 0
+        while (current != null && depth++ < MAX_DELEGATION_DEPTH) {
+            if (current is ProxyDataSource &&
+                current.proxyConfig.queryListener.listeners.any { it is JdbcCanonicalListener }
+            ) {
+                return true
+            }
+            current = delegateOf(current)
+        }
+        return false
+    }
+
+    private fun delegateOf(ds: DataSource): DataSource? =
+        if (ds is ProxyDataSource) {
+            ds.dataSource
+        } else {
+            // Duck-typed for Spring's DelegatingDataSource family without a
+            // spring-jdbc dependency: any wrapper exposing a public
+            // getTargetDataSource() is followed.
+            runCatching {
+                ds.javaClass.getMethod("getTargetDataSource").invoke(ds) as? DataSource
+            }.getOrNull()
+        }
+
+    private companion object {
+        // Defensive bound: delegation chains are short in practice; this only guards
+        // against a pathological self-referencing wrapper looping the walk forever.
+        const val MAX_DELEGATION_DEPTH = 20
     }
 }
