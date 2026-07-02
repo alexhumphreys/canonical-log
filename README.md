@@ -158,6 +158,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 | Source | Fields |
 | --- | --- |
+| Core entry points (`withCanonicalLog` / `withCanonicalLogBlocking`) | `parent_work_unit_id`, `work_unit_depth` (only on work units opened inside another one — the immediate parent's `work_unit_id` and how deep the nesting goes; absent means top-level) |
 | `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
 | `JdbcCanonicalListener` (jdbc starter) | `db_query_count` (statements), `db_execution_count` (round-trips), `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
 | `OkHttpCanonicalInterceptor` (okhttp starter, applied via `OkHttpClientBuilderCustomizer`) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |

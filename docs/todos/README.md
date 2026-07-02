@@ -23,7 +23,6 @@ the file says to update). If implementation diverges from the file's design, rec
 | [007](007-field-name-constants.md) | Field-name constants | `CanonicalFields`; document adapter-wins precedence |
 | [008](008-okhttp-enqueue-request-tag.md) | OkHttp `enqueue()` via request tag | Turn the documented dead-end into an opt-in path |
 | [009](009-second-entry-point-adapter.md) | Second entry-point sample | Kafka/@Scheduled adapter to validate the abstraction |
-| [010](010-nested-work-unit-semantics.md) | Nested work-unit semantics | Define "inner shadows outer"; align blocking/suspend |
 | [011](011-cancellation-semantics.md) | Cancellation semantics | `Outcome.Cancelled`, `cancelled=true` not `error=true` |
 | [012](012-config-metadata.md) | Config metadata | IDE autocomplete for `canonical-log.*` properties |
 | [013](013-human-readable-message.md) | Human-readable message | `GET /posts/{id} 200 12ms` instead of literal `"canonical"` |
@@ -33,4 +32,4 @@ the file says to update). If implementation diverges from the file's design, rec
 | [017](017-logstash-writer-module-split.md) | Logstash writer split | Stop forcing logstash-logback-encoder on every adopter |
 | [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
 
-Dependencies: 010 and 011 are design-first items. (001–004, which other items depended on, landed 2026-07-02.)
+Dependencies: 011 is a design-first item. (001–004, which other items depended on, landed 2026-07-02; 010 — nested work-unit semantics — landed 2026-07-02 as "inner shadows outer" with `parent_work_unit_id` + `work_unit_depth`.)

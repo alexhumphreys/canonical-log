@@ -23,9 +23,11 @@ Two deliberately different scopes — pick based on appetite:
    (consume counts/durations, DLQ-aware) per the v0.2 notes, and/or a `@CanonicalWorkUnit`
    AOP annotation in a starter for scheduled/async methods.
 
-Nesting warning: a batch consumer looping messages inside one poll will immediately raise the
-nested-work-unit question — see `010-nested-work-unit-semantics`; don't let this TODO
-accidentally define those semantics ad hoc.
+Nesting note: a batch consumer looping messages inside one poll (outer batch unit, inner
+per-message units) is covered by the defined nested-work-unit contract — inner shadows outer,
+one line per unit, inner lines carry `parent_work_unit_id` (see the gotchas entry in
+`docs/CLAUDE.md` and `NestedWorkUnitTest`). Follow that contract; don't invent batch-specific
+semantics here.
 
 ## Acceptance (for scope 1)
 

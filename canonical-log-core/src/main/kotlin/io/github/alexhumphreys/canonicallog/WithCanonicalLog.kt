@@ -38,12 +38,24 @@ public typealias EmitFn = (CanonicalLogContext) -> Unit
  *  5. Restore the previous threadlocal binding and call [emit] — both always run.
  *  6. Return the block's result, or rethrow its exception.
  *
- * Calling this inside an already-active work unit is **undefined**. Nested work
- * units are not yet supported (see CLAUDE.md). Calling it inside a coroutine
- * that does dispatcher switches is **undefined** for the inner switches —
- * the threadlocal is set on the entering thread only; coroutines that move to
- * other dispatchers won't see it. Use [withCanonicalLog] for suspend code, or
- * pair this with [withCanonicalCoroutineContext] inside the block.
+ * **Nesting — inner shadows outer.** Opening a work unit inside an already-active
+ * one is supported: while the inner unit is open, ambient contributions
+ * ([CanonicalLog.put] and friends) route to the inner accumulator only; when it
+ * closes, the enclosing unit resumes receiving contributions. Each unit emits its
+ * own canonical line (inner first), and a nested unit's line carries
+ * `parent_work_unit_id` with the immediately enclosing unit's id (each level
+ * records only its direct parent — reconstruct deeper chains by joining lines)
+ * plus `work_unit_depth` (1 for a unit opened inside a top-level unit, 2 inside
+ * that, and so on; omitted on top-level lines — absent means 0). Fields are never
+ * aggregated from an inner line into an outer one. The contract is identical for
+ * [withCanonicalLogBlocking] and [withCanonicalLog], nested in any combination;
+ * pinned by `NestedWorkUnitTest`.
+ *
+ * Calling this inside a coroutine that does dispatcher switches is **undefined**
+ * for the inner switches — the threadlocal is set on the entering thread only;
+ * coroutines that move to other dispatchers won't see it. Use [withCanonicalLog]
+ * for suspend code, or pair this with [withCanonicalCoroutineContext] inside the
+ * block.
  *
  * **Adapter exceptions:** `WorkUnitAdapter.enrich` is expected not to throw —
  * it's library-author code, not adopter code, and a throwing adapter is a bug.
@@ -64,6 +76,9 @@ public fun <T, R> withCanonicalLogBlocking(
 ): R {
     val ctx = CanonicalLogContext(adapter.describe(input))
     val previous = threadLocalContext.get()
+    if (previous != null) {
+        recordNesting(ctx, previous)
+    }
     threadLocalContext.set(ctx)
     val startNs = System.nanoTime()
     // We catch Exception, not Throwable: Error subclasses (OOM, StackOverflow, etc.)
@@ -110,16 +125,21 @@ public fun <T, R> withCanonicalLogBlocking(
  * failing child makes the work unit report [Outcome.Threw] rather than emitting
  * `Completed` while the caller sees the child's exception.
  *
- * Calling this inside an already-active work unit is **undefined**. Nested work
- * units are not yet supported (see CLAUDE.md).
+ * Nesting follows the inner-shadows-outer contract described on
+ * [withCanonicalLogBlocking]: while the inner unit is open, ambient contributions
+ * route to the inner accumulator only; the outer resumes when it closes; each unit
+ * emits its own line (inner first); the inner line carries `parent_work_unit_id`.
  *
  * **Threadlocal restoration:** unlike [withCanonicalLogBlocking], this variant does
  * not explicitly capture and restore a previous threadlocal binding around the block.
  * Restoration is delegated to the [CanonicalLogElement] `ThreadContextElement`
- * (`updateThreadContext`/`restoreThreadContext`), which is correct for the supported
- * case (a top-level entry from suspend code, where there is no prior threadlocal
- * binding on the dispatching thread). For the unsupported nested case, behaviour
- * diverges from the blocking variant — but nesting is undefined regardless.
+ * (`updateThreadContext`/`restoreThreadContext`), which saves the previous binding on
+ * every dispatch and restores it on every suspension. This is also what implements
+ * the nesting contract here: the same-`Key` element merge means the innermost unit's
+ * element wins while it is open, and the enclosing binding (from an outer element or
+ * an outer blocking entry point) is restored on each thread as the inner coroutine
+ * leaves it. Pinned by `NestedWorkUnitTest`; no `CopyableThreadContextElement` is
+ * needed for these semantics.
  *
  * Adapter exception handling matches [withCanonicalLogBlocking].
  */
@@ -131,6 +151,13 @@ public suspend fun <T, R> withCanonicalLog(
     block: suspend CoroutineScope.(CanonicalLogContext) -> R,
 ): R {
     val ctx = CanonicalLogContext(adapter.describe(input))
+    // Parent detection reads the threadlocal, not the coroutine context: the threadlocal
+    // always reflects the *innermost* active unit on this thread (a blocking inner unit
+    // opened under a suspend outer is only visible there), and any element in the calling
+    // coroutine's context has already been mirrored into the threadlocal at this point.
+    threadLocalContext.get()?.let { parent ->
+        recordNesting(ctx, parent)
+    }
     val startNs = System.nanoTime()
     return withContext(CanonicalLogElement(ctx)) {
         // See [withCanonicalLogBlocking] for the rationale: Errors propagate; only
@@ -183,6 +210,19 @@ public suspend fun <R> withCanonicalCoroutineContext(
     } else {
         coroutineScope(block)
     }
+}
+
+/**
+ * Record the nesting markers on a unit opened inside [parent]: `parent_work_unit_id`
+ * (immediate parent only) and `work_unit_depth` (parent's depth + 1). Top-level units
+ * carry neither field — absent means depth 0. The depth is read back from the parent's
+ * own field so it needs no extra state on [CanonicalLogContext]; a non-Long value there
+ * (an adopter `put` on the reserved key) is treated as 0 rather than throwing.
+ */
+private fun recordNesting(ctx: CanonicalLogContext, parent: CanonicalLogContext) {
+    ctx.put("parent_work_unit_id", parent.workUnit.id)
+    val parentDepth = parent.fields["work_unit_depth"] as? Long ?: 0L
+    ctx.put("work_unit_depth", parentDepth + 1)
 }
 
 private fun <T> runEnrich(
