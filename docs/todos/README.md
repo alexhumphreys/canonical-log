@@ -19,7 +19,6 @@ the file says to update). If implementation diverges from the file's design, rec
 
 | # | Item | One-liner |
 |---|------|-----------|
-| [005](005-java-ergonomics.md) | Java ergonomics | `@JvmStatic`/`@JvmOverloads`/Map overloads; Java smoke test |
 | [006](006-mdc-work-unit-id.md) | MDC `work_unit_id` | Correlate canonical line with ordinary logs |
 | [007](007-field-name-constants.md) | Field-name constants | `CanonicalFields`; document adapter-wins precedence |
 | [008](008-okhttp-enqueue-request-tag.md) | OkHttp `enqueue()` via request tag | Turn the documented dead-end into an opt-in path |

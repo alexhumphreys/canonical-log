@@ -140,7 +140,12 @@ These have already bitten or nearly bitten:
 
 ## Testing
 
-**Framework.** Kotest. Don't introduce JUnit-style tests for new code.
+**Framework.** Kotest. Don't introduce JUnit-style tests for new code. One deliberate
+exception: `canonical-log-core/src/test/java/JavaErgonomicsTest.java` is plain JUnit Jupiter
+because its entire purpose is to pin the Java-caller ergonomics (`@JvmStatic` statics without
+`INSTANCE`, `@JvmOverloads` on `increment`, `Map` overloads of `markFailed`/`markDegraded`
+instead of `kotlin.Pair` varargs, `withCanonicalLogBlocking` via Java lambdas) — it has to be
+Java, and Kotest isn't callable from Java. Don't port it to Kotlin.
 
 **What to test at which level.**
 

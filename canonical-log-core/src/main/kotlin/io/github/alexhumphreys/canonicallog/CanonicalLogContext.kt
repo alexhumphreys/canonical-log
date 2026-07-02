@@ -25,6 +25,7 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * a throw here would fail the app's actual DB call or replace the real
      * `IOException` of a failed HTTP call.
      */
+    @JvmOverloads
     public fun increment(key: String, by: Long = 1L) {
         var conflictingType: String? = null
         fields.merge(key, by) { existing, _ ->
@@ -53,12 +54,26 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
         extras.forEach { (k, v) -> put(k, v) }
     }
 
+    /** Java-friendly overload of [markFailed]; extras semantics are identical. */
+    public fun markFailed(reason: String, extras: Map<String, Any?>) {
+        put("error", true)
+        put("error_reason", reason)
+        extras.forEach { (k, v) -> put(k, v) }
+    }
+
     /**
      * Mark this work unit as degraded — succeeded but with caveats. Sets
      * `degraded=true` and `degraded_reason=<reason>`, plus any extra fields.
      * Null-valued extras are dropped. Does not set `error`.
      */
     public fun markDegraded(reason: String, vararg extras: Pair<String, Any?>) {
+        put("degraded", true)
+        put("degraded_reason", reason)
+        extras.forEach { (k, v) -> put(k, v) }
+    }
+
+    /** Java-friendly overload of [markDegraded]; extras semantics are identical. */
+    public fun markDegraded(reason: String, extras: Map<String, Any?>) {
         put("degraded", true)
         put("degraded_reason", reason)
         extras.forEach { (k, v) -> put(k, v) }
