@@ -10,9 +10,12 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.slf4j.LoggerFactory
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -20,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 private val nullAdapter = object : WorkUnitAdapter<String> {
     override fun describe(input: String): WorkUnit = WorkUnit(input, "test", Instant.now())
@@ -233,6 +237,26 @@ class WithCanonicalLogTest : DescribeSpec({
             threadLocalContext.get() shouldBe null
         }
 
+        it("a CancellationException from the block yields Outcome.Cancelled, one emit, and is rethrown") {
+            val emitCount = AtomicInteger()
+            var snap: Map<String, Any> = emptyMap()
+
+            val ex = runCatching {
+                withCanonicalLogBlocking<String, Unit>(
+                    nullAdapter,
+                    "wu",
+                    { emitCount.incrementAndGet(); snap = it.snapshot() },
+                ) {
+                    throw CancellationException("cancelled from blocking code")
+                }
+            }.exceptionOrNull()
+
+            ex.shouldBeInstanceOf<CancellationException>()
+            emitCount.get() shouldBe 1
+            snap["outcome"] shouldBe "Cancelled"
+            threadLocalContext.get() shouldBe null
+        }
+
         it("if both block and adapter.enrich throw, block exception is primary; enrich captured on the canonical line") {
             var snap: Map<String, Any> = emptyMap()
             val blockEx = IllegalArgumentException("block blew up")
@@ -379,6 +403,62 @@ class WithCanonicalLogTest : DescribeSpec({
             } finally {
                 detachLibraryWarnAppender(appender)
             }
+        }
+
+        it("a cancelled coroutine yields Outcome.Cancelled: one line, in-flight contributions land, CE not swallowed, threadlocal clean") {
+            val emitCount = AtomicInteger()
+            var snap: Map<String, Any> = emptyMap()
+            var reachedAfterWorkUnit = false
+
+            runBlocking {
+                val started = CompletableDeferred<Unit>()
+                val job = launch {
+                    withCanonicalLog(
+                        nullAdapter,
+                        "wu",
+                        { emitCount.incrementAndGet(); snap = it.snapshot() },
+                    ) {
+                        CanonicalLog.put("before_cancel", "yes")
+                        started.complete(Unit)
+                        awaitCancellation()
+                    }
+                    // Only reachable if withCanonicalLog swallowed the CE.
+                    reachedAfterWorkUnit = true
+                }
+                started.await()
+                job.cancelAndJoin()
+            }
+
+            emitCount.get() shouldBe 1
+            snap["outcome"] shouldBe "Cancelled"
+            // Whatever was in the accumulator at cancellation time is on the line —
+            // same snapshot cutoff as every other path.
+            snap["before_cancel"] shouldBe "yes"
+            reachedAfterWorkUnit shouldBe false
+            threadLocalContext.get() shouldBe null
+        }
+
+        it("a CE thrown by the block without real job cancellation is still classified Cancelled and rethrown") {
+            val emitCount = AtomicInteger()
+            var snap: Map<String, Any> = emptyMap()
+
+            val ex = runCatching {
+                runBlocking {
+                    withCanonicalLog<String, Unit>(
+                        nullAdapter,
+                        "wu",
+                        { emitCount.incrementAndGet(); snap = it.snapshot() },
+                    ) {
+                        // e.g. a CE leaked from await() on an externally cancelled
+                        // Deferred — classification is by exception type, not job state.
+                        throw CancellationException("leaked CE")
+                    }
+                }
+            }.exceptionOrNull()
+
+            ex.shouldBeInstanceOf<CancellationException>()
+            emitCount.get() shouldBe 1
+            snap["outcome"] shouldBe "Cancelled"
         }
 
         it("if both block and adapter.enrich throw in the suspend variant, block exception is primary; enrich captured on the canonical line") {

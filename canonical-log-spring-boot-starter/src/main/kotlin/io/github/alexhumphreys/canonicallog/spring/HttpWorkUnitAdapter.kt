@@ -56,6 +56,21 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
                 // the client actually receives.
                 if (capturedStatus < STATUS_SERVER_ERROR) STATUS_SERVER_ERROR else capturedStatus
             }
+            is Outcome.Cancelled -> {
+                // Cancellation is not a failure: cancelled=true, no error=true, so
+                // client disconnects and request timeouts don't pollute error rates.
+                ctx.put("cancelled", true)
+                if (current["cancel_reason"] == null) {
+                    ctx.put("cancel_reason", "cancelled")
+                }
+                // A cancelled request rarely produced a real response status — the
+                // captured value is usually the pre-commit default (200), and what the
+                // container writes afterwards (often 500 on async timeout) happens
+                // after this filter unwinds and is container-dependent. The line
+                // reports 499 (nginx's "client closed request") as the convention for
+                // cancelled HTTP work, keeping only an already-set error status.
+                if (capturedStatus < STATUS_BAD_REQUEST) STATUS_CLIENT_CLOSED_REQUEST else capturedStatus
+            }
             is Outcome.Completed -> {
                 if (capturedStatus >= STATUS_SERVER_ERROR && current["error"] != true) {
                     ctx.put("error", true)
@@ -70,6 +85,8 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
     }
 
     private companion object {
+        const val STATUS_BAD_REQUEST = 400
+        const val STATUS_CLIENT_CLOSED_REQUEST = 499
         const val STATUS_SERVER_ERROR = 500
     }
 }

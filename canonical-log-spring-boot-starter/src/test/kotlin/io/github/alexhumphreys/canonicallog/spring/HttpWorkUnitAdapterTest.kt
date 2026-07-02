@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.web.servlet.HandlerMapping
+import java.util.concurrent.CancellationException
 
 @OptIn(DelicateCanonicalLogApi::class)
 private fun ctx(): CanonicalLogContext = CanonicalLogContext(
@@ -138,6 +139,43 @@ class HttpWorkUnitAdapterTest : DescribeSpec({
             s["error"] shouldBe true
             s["error_reason"] shouldBe "validation_failed"
             s["error_class"] shouldBe "java.lang.IllegalStateException"
+        }
+    }
+
+    describe("enrich on Outcome.Cancelled") {
+        it("sets cancelled=true with a default cancel_reason and no error fields") {
+            val c = ctx()
+            adapter.enrich(c, exchange(status = 200), Outcome.Cancelled(5L, CancellationException("gone")))
+
+            val s = c.snapshot()
+            s["cancelled"] shouldBe true
+            s["cancel_reason"] shouldBe "cancelled"
+            // Cancellation is not a failure — it must not pollute error rates.
+            s.containsKey("error") shouldBe false
+            s.containsKey("error_class") shouldBe false
+            s.containsKey("error_reason") shouldBe false
+        }
+
+        it("reports 499 when the captured status is still the pre-commit default") {
+            val c = ctx()
+            adapter.enrich(c, exchange(status = 200), Outcome.Cancelled(5L, CancellationException()))
+
+            c.snapshot()["http_response_status_code"] shouldBe 499
+        }
+
+        it("keeps an already-set error status instead of overriding to 499") {
+            val c = ctx()
+            adapter.enrich(c, exchange(status = 503), Outcome.Cancelled(5L, CancellationException()))
+
+            c.snapshot()["http_response_status_code"] shouldBe 503
+        }
+
+        it("defers to a pre-set cancel_reason") {
+            val c = ctx()
+            c.put("cancel_reason", "async_timeout")
+            adapter.enrich(c, exchange(status = 200), Outcome.Cancelled(5L, CancellationException()))
+
+            c.snapshot()["cancel_reason"] shouldBe "async_timeout"
         }
     }
 })

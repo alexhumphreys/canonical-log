@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Logger for the library's own failure reporting (a throwing emit or enrich). Named
@@ -51,6 +52,11 @@ public typealias EmitFn = (CanonicalLogContext) -> Unit
  * [withCanonicalLogBlocking] and [withCanonicalLog], nested in any combination;
  * pinned by `NestedWorkUnitTest`.
  *
+ * **Cancellation:** a block that terminates with a [CancellationException] (e.g. a
+ * `Future.get` on a cancelled future, or blocking-over-coroutine bridges) produces
+ * [Outcome.Cancelled] rather than [Outcome.Threw], and the exception is rethrown
+ * after enrich/emit — cancellation is observed, never swallowed.
+ *
  * Calling this inside a coroutine that does dispatcher switches is **undefined**
  * for the inner switches — the threadlocal is set on the entering thread only;
  * coroutines that move to other dispatchers won't see it. Use [withCanonicalLog]
@@ -93,10 +99,7 @@ public fun <T, R> withCanonicalLogBlocking(
         threadLocalContext.set(previous)
         throw t
     }
-    val outcome = blockResult.fold(
-        onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
-        onFailure = { Outcome.Threw(elapsedMs(startNs), it) },
-    )
+    val outcome = outcomeOf(blockResult, startNs)
     // The finally guards the threadlocal against an Error escaping enrich (Exceptions
     // are swallowed inside runEnrich; Errors propagate per the rationale above).
     try {
@@ -129,6 +132,18 @@ public fun <T, R> withCanonicalLogBlocking(
  * [withCanonicalLogBlocking]: while the inner unit is open, ambient contributions
  * route to the inner accumulator only; the outer resumes when it closes; each unit
  * emits its own line (inner first); the inner line carries `parent_work_unit_id`.
+ *
+ * **Cancellation:** when the block terminates with a [CancellationException] (request
+ * timeout, client disconnect, `job.cancel()`), the outcome is [Outcome.Cancelled] and
+ * the CE is rethrown after enrich/emit — never swallowed, so structured concurrency
+ * stays intact. This works even though the coroutine is already cancelled at that
+ * point: `enrich` and `emit` are deliberately non-suspending, so there is no
+ * suspension point between catching the CE and rethrowing it for cancellation to
+ * abort. Whatever the accumulator holds at that moment is what the line carries —
+ * the same snapshot cutoff as every other path. One inherent race: if the caller's
+ * job is cancelled *after* the block completes but before [withContext] returns,
+ * [withContext] rethrows the job's CE even though the line already reported
+ * `Completed` — the line reflects how the block itself terminated.
  *
  * **Threadlocal restoration:** unlike [withCanonicalLogBlocking], this variant does
  * not explicitly capture and restore a previous threadlocal binding around the block.
@@ -175,10 +190,7 @@ public suspend fun <T, R> withCanonicalLog(
         } catch (e: Exception) {
             Result.failure(e)
         }
-        val outcome = blockResult.fold(
-            onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
-            onFailure = { Outcome.Threw(elapsedMs(startNs), it) },
-        )
+        val outcome = outcomeOf(blockResult, startNs)
         runEnrich(adapter, ctx, input, outcome)
         safeEmit(emit, ctx)
         blockResult.getOrThrow()
@@ -224,6 +236,21 @@ private fun recordNesting(ctx: CanonicalLogContext, parent: CanonicalLogContext)
     val parentDepth = parent.fields["work_unit_depth"] as? Long ?: 0L
     ctx.put("work_unit_depth", parentDepth + 1)
 }
+
+/**
+ * Map the block's [Result] to the lifecycle [Outcome]. Cancellation is classified by
+ * exception type — see [Outcome.Cancelled] for why the current job is not consulted.
+ * The caller rethrows via `getOrThrow()` either way; this only decides what the line says.
+ */
+private fun outcomeOf(blockResult: Result<*>, startNs: Long): Outcome = blockResult.fold(
+    onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
+    onFailure = { cause ->
+        when (cause) {
+            is CancellationException -> Outcome.Cancelled(elapsedMs(startNs), cause)
+            else -> Outcome.Threw(elapsedMs(startNs), cause)
+        }
+    },
+)
 
 private fun <T> runEnrich(
     adapter: WorkUnitAdapter<T>,

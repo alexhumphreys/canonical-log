@@ -13,7 +13,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
 import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -93,10 +93,17 @@ public class CanonicalLogFilter(
         val startNs = System.nanoTime()
 
         fun emit(error: Throwable?) {
-            val outcome = if (error != null) {
-                Outcome.Threw(elapsedMs(startNs), error)
-            } else {
-                Outcome.Completed(elapsedMs(startNs))
+            val outcome = when {
+                // Cancellation (client disconnect, async timeout) is not a failure:
+                // Outcome.Cancelled → cancelled=true on the line, no error=true. Same
+                // classification rule as core's withCanonicalLog, so the servlet and
+                // suspend entry points tell the same story.
+                error is CancellationException -> Outcome.Cancelled(elapsedMs(startNs), error)
+                error != null -> Outcome.Threw(elapsedMs(startNs), error)
+                else -> Outcome.Completed(elapsedMs(startNs))
+            }
+            if (error is AsyncTimeoutCancellationException && ctx.snapshot()["cancel_reason"] == null) {
+                ctx.put("cancel_reason", "async_timeout")
             }
             try {
                 adapter.enrich(ctx, exchange, outcome)
@@ -180,7 +187,7 @@ internal class CanonicalLogAsyncEmitListener(
 
     override fun onComplete(event: AsyncEvent) = emitOnce(event.throwable)
     override fun onError(event: AsyncEvent) = emitOnce(event.throwable)
-    override fun onTimeout(event: AsyncEvent) = emitOnce(TimeoutException("async dispatch timeout"))
+    override fun onTimeout(event: AsyncEvent) = emitOnce(AsyncTimeoutCancellationException())
     override fun onStartAsync(event: AsyncEvent) {
         event.asyncContext.addListener(this)
     }
@@ -188,4 +195,21 @@ internal class CanonicalLogAsyncEmitListener(
     private fun emitOnce(error: Throwable?) {
         if (emitted.compareAndSet(false, true)) emit(error)
     }
+}
+
+/**
+ * Cancellation signal synthesized when the servlet container's async timeout fires.
+ *
+ * An async timeout means the work was cut off, not that it failed — so the filter
+ * maps it to [Outcome.Cancelled] (`cancelled=true`, `cancel_reason="async_timeout"`)
+ * rather than the `TimeoutException` → `Outcome.Threw` → `error=true` it used to
+ * synthesize. Note the on-the-wire status the container writes after the listeners
+ * run is container-dependent (Tomcat sends a 500 error page if nothing completed
+ * the request); the canonical line deliberately reports the cancellation (499 by
+ * [HttpWorkUnitAdapter]'s convention), not the container's error page.
+ */
+internal class AsyncTimeoutCancellationException : CancellationException("async dispatch timeout") {
+    // A synthesized signal's stack trace (container timer thread) has no diagnostic
+    // value; skip constructing it.
+    override fun fillInStackTrace(): Throwable = this
 }

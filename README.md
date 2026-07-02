@@ -159,7 +159,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 | Source | Fields |
 | --- | --- |
 | Core entry points (`withCanonicalLog` / `withCanonicalLogBlocking`) | `parent_work_unit_id`, `work_unit_depth` (only on work units opened inside another one — the immediate parent's `work_unit_id` and how deep the nesting goes; absent means top-level) |
-| `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one) |
+| `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one), `cancelled` + `cancel_reason` (on `Cancelled`) |
 | `JdbcCanonicalListener` (jdbc starter) | `db_query_count` (statements), `db_execution_count` (round-trips), `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
 | `OkHttpCanonicalInterceptor` (okhttp starter, applied via `OkHttpClientBuilderCustomizer`) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |
@@ -171,12 +171,14 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 ## Outcome model
 
-`Outcome` reports lifecycle: `Completed(durationMs)` if the block returned, `Threw(durationMs, cause)` if it threw. Whether the work was *semantically* successful is up to the handler:
+`Outcome` reports lifecycle: `Completed(durationMs)` if the block returned, `Threw(durationMs, cause)` if it threw, `Cancelled(durationMs, cause)` if it was cut off by a `CancellationException` (client disconnect, request timeout, structured-concurrency cancellation). Whether the work was *semantically* successful is up to the handler:
 
 - `CanonicalLog.markFailed(reason, ...fields)` → sets `error=true`, `error_reason=<reason>`. For typed errors (Either, Result), business-rule violations, or 4xx responses returned cleanly.
 - `CanonicalLog.markDegraded(reason, ...fields)` → sets `degraded=true` without flagging error. For partial successes, cache fallbacks, etc.
 
 The HTTP adapter defers to handler-set `error_reason` and only injects defaults (`exception` for `Threw`, `server_error` for 5xx) when nothing is set.
+
+Cancellation is not a failure: a `Cancelled` line carries `cancelled=true` and a `cancel_reason` (`async_timeout` when the servlet async timeout fired, `cancelled` otherwise) instead of `error=true`, so timeouts and client disconnects don't pollute error rates. The HTTP adapter reports status `499` (nginx's "client closed request" convention) for cancelled requests unless an error status was already set. The `CancellationException` itself is always rethrown after the line is emitted — observing cancellation never breaks structured concurrency.
 
 ## Sample
 

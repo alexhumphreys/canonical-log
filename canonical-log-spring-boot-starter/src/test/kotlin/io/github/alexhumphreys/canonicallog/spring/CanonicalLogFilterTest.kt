@@ -267,6 +267,34 @@ class CanonicalLogFilterTest : DescribeSpec({
             }
         }
 
+        it("an async timeout emits a cancelled line, not an error line") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/slow").apply { isAsyncSupported = true }
+                val res = MockHttpServletResponse().apply { status = 200 }
+                val chain = FilterChain { _, _ -> req.startAsync(req, res) }
+
+                CanonicalLogFilter().doFilter(req, res, chain)
+
+                // Simulate the container's async timeout firing, then the onComplete
+                // that containers deliver afterwards — single-emit guard absorbs it.
+                val asyncCtx = req.asyncContext as MockAsyncContext
+                val event = jakarta.servlet.AsyncEvent(asyncCtx, req, res)
+                asyncCtx.listeners.forEach { it.onTimeout(event) }
+                asyncCtx.listeners.forEach { it.onComplete(event) }
+
+                appender.list.count { it.loggerName == "canonical" } shouldBe 1
+                val snap = lastCanonicalSnapshot(appender)
+                snap["cancelled"] shouldBe true
+                snap["cancel_reason"] shouldBe "async_timeout"
+                snap["http_response_status_code"] shouldBe 499
+                snap.containsKey("error") shouldBe false
+                snap.containsKey("error_class") shouldBe false
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
         it("emits exactly once when a synchronous handler throws") {
             val appender = attachAppender()
             try {

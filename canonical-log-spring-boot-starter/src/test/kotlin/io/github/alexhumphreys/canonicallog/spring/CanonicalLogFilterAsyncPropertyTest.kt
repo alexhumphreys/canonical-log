@@ -12,7 +12,7 @@ import jakarta.servlet.AsyncListener
 import org.springframework.mock.web.MockAsyncContext
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -81,7 +81,7 @@ class CanonicalLogFilterAsyncPropertyTest : DescribeSpec({
             captured shouldBe cause
         }
 
-        it("captures TimeoutException when onTimeout fires first") {
+        it("synthesizes a cancellation (not an error) when onTimeout fires first") {
             val req = MockHttpServletRequest("GET", "/").apply { isAsyncSupported = true }
             val res = MockHttpServletResponse()
             val ctx = MockAsyncContext(req, res)
@@ -93,7 +93,10 @@ class CanonicalLogFilterAsyncPropertyTest : DescribeSpec({
             listener.onTimeout(event)
             listener.onComplete(event)
 
-            (captured is TimeoutException) shouldBe true
+            // A CancellationException is what makes the filter's emit produce
+            // Outcome.Cancelled (cancelled=true) instead of Threw (error=true).
+            (captured is CancellationException) shouldBe true
+            (captured is AsyncTimeoutCancellationException) shouldBe true
         }
 
         it("onStartAsync re-registration: dispatch-and-redispatch terminal callbacks still single-emit") {
