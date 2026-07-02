@@ -15,13 +15,12 @@ the file says to update). If implementation diverges from the file's design, rec
 
 | # | Item | One-liner |
 |---|------|-----------|
-| [003](003-test-kit-module.md) | `canonical-log-test` module | `captureCanonicalLine { }` harness so adopters can assert on lines |
+| [004](004-non-throwing-emit.md) | Non-throwing emit | Sink failure must not replace the block's result (consistency with `aa34166`) |
 
 ## Backlog
 
 | # | Item | One-liner |
 |---|------|-----------|
-| [004](004-non-throwing-emit.md) | Non-throwing emit | Sink failure must not replace the block's result (consistency with `aa34166`) |
 | [005](005-java-ergonomics.md) | Java ergonomics | `@JvmStatic`/`@JvmOverloads`/Map overloads; Java smoke test |
 | [006](006-mdc-work-unit-id.md) | MDC `work_unit_id` | Correlate canonical line with ordinary logs |
 | [007](007-field-name-constants.md) | Field-name constants | `CanonicalFields`; document adapter-wins precedence |
@@ -37,4 +36,4 @@ the file says to update). If implementation diverges from the file's design, rec
 | [017](017-logstash-writer-module-split.md) | Logstash writer split | Stop forcing logstash-logback-encoder on every adopter |
 | [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
 
-Dependencies: 010 and 011 are design-first items. (001 and 002, which other items depended on, landed 2026-07-02.)
+Dependencies: 010 and 011 are design-first items. (001–003, which other items depended on, landed 2026-07-02.)

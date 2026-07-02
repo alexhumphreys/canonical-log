@@ -13,5 +13,6 @@ include(
     "canonical-log-jdbc",
     "canonical-log-jdbc-spring-boot-starter",
     "canonical-log-spring-boot-starter",
+    "canonical-log-test",
     "samples:spring-demo",
 )
