@@ -41,6 +41,18 @@ import java.io.IOException
  *   failure rate compute `(error_count + 5xx_count) / request_count`; whether
  *   to also include 4xx is a judgement call (often yes for the calling service,
  *   no for the upstream service).
+ *
+ * **Synchronous `execute()` only — `enqueue()` contributions are silently lost.**
+ * This interceptor contributes via the ambient [CanonicalLog] API, which resolves
+ * the active work unit through the calling thread. `Call.execute()` runs the
+ * interceptor on the caller's thread, where the work unit is bound. `Call.enqueue()`
+ * runs it on OkHttp's dispatcher threads, where no work unit is bound — every field
+ * is silently dropped (the ambient API's no-op behaviour). Wrapping the dispatcher's
+ * executor with `propagatingCanonicalContext()` does NOT fix this: queued calls are
+ * promoted onto the executor from OkHttp's own threads, so capture-at-submit grabs
+ * the wrong (empty) context. If you need async calls inside a work unit, prefer
+ * `execute()` on a coroutine dispatcher bridged via `withCanonicalCoroutineContext`
+ * (as the sample app does), or on a thread wrapped via the core propagation helpers.
  */
 public class OkHttpCanonicalInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
