@@ -19,7 +19,6 @@ the file says to update). If implementation diverges from the file's design, rec
 
 | # | Item | One-liner |
 |---|------|-----------|
-| [007](007-field-name-constants.md) | Field-name constants | `CanonicalFields`; document adapter-wins precedence |
 | [008](008-okhttp-enqueue-request-tag.md) | OkHttp `enqueue()` via request tag | Turn the documented dead-end into an opt-in path |
 | [009](009-second-entry-point-adapter.md) | Second entry-point sample | Kafka/@Scheduled adapter to validate the abstraction |
 | [012](012-config-metadata.md) | Config metadata | IDE autocomplete for `canonical-log.*` properties |
@@ -30,4 +29,4 @@ the file says to update). If implementation diverges from the file's design, rec
 | [017](017-logstash-writer-module-split.md) | Logstash writer split | Stop forcing logstash-logback-encoder on every adopter |
 | [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
 
-Dependencies: none currently. (001–004, which other items depended on, landed 2026-07-02; 006 — MDC `work_unit_id` — landed 2026-07-03 as the `CanonicalLogMdc` mirror, opt-out `canonical-log.http.mdc-enabled`; 010 — nested work-unit semantics — landed 2026-07-02 as "inner shadows outer" with `parent_work_unit_id` + `work_unit_depth`; 011 — cancellation semantics — landed 2026-07-02 as `Outcome.Cancelled` with `cancelled=true`/`cancel_reason`, CE always rethrown.)
+Dependencies: none currently. (001–004, which other items depended on, landed 2026-07-02; 006 — MDC `work_unit_id` — landed 2026-07-03 as the `CanonicalLogMdc` mirror, opt-out `canonical-log.http.mdc-enabled`; 007 — field-name constants — landed 2026-07-03 as `CanonicalFields` with adapter-wins precedence documented on `WorkUnitAdapter.enrich`; 010 — nested work-unit semantics — landed 2026-07-02 as "inner shadows outer" with `parent_work_unit_id` + `work_unit_depth`; 011 — cancellation semantics — landed 2026-07-02 as `Outcome.Cancelled` with `cancelled=true`/`cancel_reason`, CE always rethrown.)

@@ -28,6 +28,18 @@ public interface WorkUnitAdapter<T> {
      * Write the adapter's mechanically-uniform fields onto the [ctx]. Called once at
      * the end of the lifecycle, after the body has run. Has access to the original
      * [input] and the [outcome] (lifecycle-level success or thrown exception).
+     *
+     * **Precedence — the adapter wins for the same key.** Because `enrich` runs *after*
+     * the handler block, an unconditional `ctx.put` here overwrites any value the handler
+     * set under the same key. That is intentional for the mechanically-uniform fields
+     * (status, durations, [WorkUnit] identity): the adapter is authoritative. The
+     * deliberate exceptions are the two "intent" fields — [CanonicalFields.ERROR_REASON]
+     * and [CanonicalFields.CANCEL_REASON] — where a handler-set value expresses intent the
+     * adapter shouldn't clobber; the reference adapter checks `ctx.snapshot()[key] == null`
+     * before writing its own default (`"exception"` / `"server_error"` / `"cancelled"`).
+     * Follow the same check-before-default pattern in custom adapters for any field a
+     * handler is expected to own. Reference the [CanonicalFields] constants rather than
+     * string literals so a rename is a compile error.
      */
     public fun enrich(ctx: CanonicalLogContext, input: T, outcome: Outcome)
 }

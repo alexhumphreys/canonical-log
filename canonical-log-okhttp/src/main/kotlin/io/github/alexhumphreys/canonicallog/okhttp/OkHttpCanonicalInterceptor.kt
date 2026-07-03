@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.okhttp
 
+import io.github.alexhumphreys.canonicallog.CanonicalFields
 import io.github.alexhumphreys.canonicallog.CanonicalLog
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -63,19 +64,19 @@ public class OkHttpCanonicalInterceptor : Interceptor {
             val response = chain.proceed(request)
             val durationMs = (System.nanoTime() - startNs) / 1_000_000
 
-            CanonicalLog.increment("http_client_request_count")
-            CanonicalLog.increment("http_client_request_duration_ms_total", durationMs)
+            CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_REQUEST_COUNT)
+            CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_REQUEST_DURATION_MS_TOTAL, durationMs)
             when {
-                response.code >= 500 -> CanonicalLog.increment("http_client_5xx_count")
-                response.code >= 400 -> CanonicalLog.increment("http_client_4xx_count")
+                response.code >= 500 -> CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_5XX_COUNT)
+                response.code >= 400 -> CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_4XX_COUNT)
             }
 
             return response
         } catch (e: IOException) {
             val durationMs = (System.nanoTime() - startNs) / 1_000_000
-            CanonicalLog.increment("http_client_request_count")
-            CanonicalLog.increment("http_client_request_duration_ms_total", durationMs)
-            CanonicalLog.increment("http_client_error_count")
+            CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_REQUEST_COUNT)
+            CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_REQUEST_DURATION_MS_TOTAL, durationMs)
+            CanonicalLog.increment(CanonicalFields.HTTP_CLIENT_ERROR_COUNT)
             throw e
         }
     }

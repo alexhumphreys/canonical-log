@@ -240,9 +240,9 @@ public suspend fun <R> withCanonicalCoroutineContext(
  * (an adopter `put` on the reserved key) is treated as 0 rather than throwing.
  */
 private fun recordNesting(ctx: CanonicalLogContext, parent: CanonicalLogContext) {
-    ctx.put("parent_work_unit_id", parent.workUnit.id)
-    val parentDepth = parent.fields["work_unit_depth"] as? Long ?: 0L
-    ctx.put("work_unit_depth", parentDepth + 1)
+    ctx.put(CanonicalFields.PARENT_WORK_UNIT_ID, parent.workUnit.id)
+    val parentDepth = parent.fields[CanonicalFields.WORK_UNIT_DEPTH] as? Long ?: 0L
+    ctx.put(CanonicalFields.WORK_UNIT_DEPTH, parentDepth + 1)
 }
 
 /**
@@ -269,8 +269,8 @@ private fun <T> runEnrich(
     try {
         adapter.enrich(ctx, input, outcome)
     } catch (enrichEx: Exception) {
-        ctx.put("canonical_log_enrich_error", true)
-        ctx.put("canonical_log_enrich_error_class", enrichEx::class.qualifiedName ?: "unknown")
+        ctx.put(CanonicalFields.ENRICH_ERROR, true)
+        ctx.put(CanonicalFields.ENRICH_ERROR_CLASS, enrichEx::class.qualifiedName ?: "unknown")
         libraryLogger.warn(
             "adapter.enrich threw for work unit {}; failure recorded on the canonical line, block result unaffected",
             ctx.workUnit.id,

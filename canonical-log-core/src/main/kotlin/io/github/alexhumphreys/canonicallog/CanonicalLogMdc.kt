@@ -28,8 +28,8 @@ import org.slf4j.MDC
  */
 public object CanonicalLogMdc {
 
-    /** The MDC key, matching the canonical line's `work_unit_id` field. */
-    public const val KEY: String = "work_unit_id"
+    /** The MDC key, matching the canonical line's `work_unit_id` field ([CanonicalFields.WORK_UNIT_ID]). */
+    public const val KEY: String = CanonicalFields.WORK_UNIT_ID
 
     /** Process-wide switch; see the class KDoc for the set-at-startup-only caveat. */
     @Volatile

@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.spring
 
+import io.github.alexhumphreys.canonicallog.CanonicalFields
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
@@ -107,14 +108,14 @@ public class CanonicalLogFilter(
                 error != null -> Outcome.Threw(elapsedMs(startNs), error)
                 else -> Outcome.Completed(elapsedMs(startNs))
             }
-            if (error is AsyncTimeoutCancellationException && ctx.snapshot()["cancel_reason"] == null) {
-                ctx.put("cancel_reason", "async_timeout")
+            if (error is AsyncTimeoutCancellationException && ctx.snapshot()[CanonicalFields.CANCEL_REASON] == null) {
+                ctx.put(CanonicalFields.CANCEL_REASON, "async_timeout")
             }
             try {
                 adapter.enrich(ctx, exchange, outcome)
             } catch (e: Exception) {
-                ctx.put("canonical_log_enrich_error", true)
-                ctx.put("canonical_log_enrich_error_class", e::class.qualifiedName ?: "unknown")
+                ctx.put(CanonicalFields.ENRICH_ERROR, true)
+                ctx.put(CanonicalFields.ENRICH_ERROR_CLASS, e::class.qualifiedName ?: "unknown")
                 libraryLogger.warn(
                     "adapter.enrich threw for work unit {}; failure recorded on the canonical line, request unaffected",
                     ctx.workUnit.id,

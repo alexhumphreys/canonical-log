@@ -37,9 +37,9 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
             }
         }
         if (conflictingType != null) {
-            put("canonical_log_type_conflict", true)
-            put("canonical_log_type_conflict_key", key)
-            put("canonical_log_type_conflict_type", conflictingType)
+            put(CanonicalFields.TYPE_CONFLICT, true)
+            put(CanonicalFields.TYPE_CONFLICT_KEY, key)
+            put(CanonicalFields.TYPE_CONFLICT_TYPE, conflictingType)
         }
     }
 
@@ -49,15 +49,15 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * matching [put]. Idempotent — last call wins.
      */
     public fun markFailed(reason: String, vararg extras: Pair<String, Any?>) {
-        put("error", true)
-        put("error_reason", reason)
+        put(CanonicalFields.ERROR, true)
+        put(CanonicalFields.ERROR_REASON, reason)
         extras.forEach { (k, v) -> put(k, v) }
     }
 
     /** Java-friendly overload of [markFailed]; extras semantics are identical. */
     public fun markFailed(reason: String, extras: Map<String, Any?>) {
-        put("error", true)
-        put("error_reason", reason)
+        put(CanonicalFields.ERROR, true)
+        put(CanonicalFields.ERROR_REASON, reason)
         extras.forEach { (k, v) -> put(k, v) }
     }
 
@@ -67,15 +67,15 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * Null-valued extras are dropped. Does not set `error`.
      */
     public fun markDegraded(reason: String, vararg extras: Pair<String, Any?>) {
-        put("degraded", true)
-        put("degraded_reason", reason)
+        put(CanonicalFields.DEGRADED, true)
+        put(CanonicalFields.DEGRADED_REASON, reason)
         extras.forEach { (k, v) -> put(k, v) }
     }
 
     /** Java-friendly overload of [markDegraded]; extras semantics are identical. */
     public fun markDegraded(reason: String, extras: Map<String, Any?>) {
-        put("degraded", true)
-        put("degraded_reason", reason)
+        put(CanonicalFields.DEGRADED, true)
+        put(CanonicalFields.DEGRADED_REASON, reason)
         extras.forEach { (k, v) -> put(k, v) }
     }
 

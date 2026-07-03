@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.jdbc
 
+import io.github.alexhumphreys.canonicallog.CanonicalFields
 import io.github.alexhumphreys.canonicallog.CanonicalLog
 import net.ttddyy.dsproxy.ExecutionInfo
 import net.ttddyy.dsproxy.QueryInfo
@@ -39,16 +40,16 @@ public class JdbcCanonicalListener(
     }
 
     override fun afterQuery(execInfo: ExecutionInfo, queryInfoList: MutableList<QueryInfo>) {
-        CanonicalLog.increment("db_query_count", queryInfoList.size.toLong())
-        CanonicalLog.increment("db_execution_count", 1L)
+        CanonicalLog.increment(CanonicalFields.DB_QUERY_COUNT, queryInfoList.size.toLong())
+        CanonicalLog.increment(CanonicalFields.DB_EXECUTION_COUNT, 1L)
         // Time is charged for failed executions too — operators want total time-spent
         // on DB work, not just successful work.
-        CanonicalLog.increment("db_execution_duration_ms_total", execInfo.elapsedTime)
+        CanonicalLog.increment(CanonicalFields.DB_EXECUTION_DURATION_MS_TOTAL, execInfo.elapsedTime)
         if (execInfo.elapsedTime >= slowQueryThresholdMs) {
-            CanonicalLog.increment("db_slow_execution_count")
+            CanonicalLog.increment(CanonicalFields.DB_SLOW_EXECUTION_COUNT)
         }
         if (!execInfo.isSuccess) {
-            CanonicalLog.increment("db_execution_error_count")
+            CanonicalLog.increment(CanonicalFields.DB_EXECUTION_ERROR_COUNT)
         }
     }
 

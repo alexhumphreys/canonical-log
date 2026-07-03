@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.spring
 
+import io.github.alexhumphreys.canonicallog.CanonicalFields
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnit
@@ -32,23 +33,23 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
         val matchedRoute = input.request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String
         val capturedStatus = input.response.status
 
-        ctx.put("http_request_method", method)
-        ctx.put("url_path", rawPath)
+        ctx.put(CanonicalFields.HTTP_REQUEST_METHOD, method)
+        ctx.put(CanonicalFields.URL_PATH, rawPath)
         // http_route is the matched template (e.g. /posts/{id}), used for grouping in
         // dashboards. Omitted entirely when no template was matched (e.g. 404 before
         // routing) so queries on http_route don't surface unmatched garbage.
-        ctx.put("http_route", matchedRoute)
-        ctx.put("http_request_duration_ms", outcome.durationMs)
-        ctx.put("work_unit_id", ctx.workUnit.id)
-        ctx.put("work_unit_kind", ctx.workUnit.kind)
+        ctx.put(CanonicalFields.HTTP_ROUTE, matchedRoute)
+        ctx.put(CanonicalFields.HTTP_REQUEST_DURATION_MS, outcome.durationMs)
+        ctx.put(CanonicalFields.WORK_UNIT_ID, ctx.workUnit.id)
+        ctx.put(CanonicalFields.WORK_UNIT_KIND, ctx.workUnit.kind)
 
         val current = ctx.snapshot()
         val effectiveStatus = when (outcome) {
             is Outcome.Threw -> {
-                ctx.put("error", true)
-                ctx.put("error_class", outcome.cause::class.qualifiedName ?: "unknown")
-                if (current["error_reason"] == null) {
-                    ctx.put("error_reason", "exception")
+                ctx.put(CanonicalFields.ERROR, true)
+                ctx.put(CanonicalFields.ERROR_CLASS, outcome.cause::class.qualifiedName ?: "unknown")
+                if (current[CanonicalFields.ERROR_REASON] == null) {
+                    ctx.put(CanonicalFields.ERROR_REASON, "exception")
                 }
                 // Uncaught exceptions are mapped to 5xx by the servlet container's outer
                 // valve, but that happens AFTER our filter unwinds. If the captured status
@@ -59,9 +60,9 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
             is Outcome.Cancelled -> {
                 // Cancellation is not a failure: cancelled=true, no error=true, so
                 // client disconnects and request timeouts don't pollute error rates.
-                ctx.put("cancelled", true)
-                if (current["cancel_reason"] == null) {
-                    ctx.put("cancel_reason", "cancelled")
+                ctx.put(CanonicalFields.CANCELLED, true)
+                if (current[CanonicalFields.CANCEL_REASON] == null) {
+                    ctx.put(CanonicalFields.CANCEL_REASON, "cancelled")
                 }
                 // A cancelled request rarely produced a real response status — the
                 // captured value is usually the pre-commit default (200), and what the
@@ -72,16 +73,16 @@ public class HttpWorkUnitAdapter : WorkUnitAdapter<HttpExchange> {
                 if (capturedStatus < STATUS_BAD_REQUEST) STATUS_CLIENT_CLOSED_REQUEST else capturedStatus
             }
             is Outcome.Completed -> {
-                if (capturedStatus >= STATUS_SERVER_ERROR && current["error"] != true) {
-                    ctx.put("error", true)
-                    if (current["error_reason"] == null) {
-                        ctx.put("error_reason", "server_error")
+                if (capturedStatus >= STATUS_SERVER_ERROR && current[CanonicalFields.ERROR] != true) {
+                    ctx.put(CanonicalFields.ERROR, true)
+                    if (current[CanonicalFields.ERROR_REASON] == null) {
+                        ctx.put(CanonicalFields.ERROR_REASON, "server_error")
                     }
                 }
                 capturedStatus
             }
         }
-        ctx.put("http_response_status_code", effectiveStatus)
+        ctx.put(CanonicalFields.HTTP_RESPONSE_STATUS_CODE, effectiveStatus)
     }
 
     private companion object {

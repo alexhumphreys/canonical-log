@@ -165,6 +165,10 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |
 | Logstash encoder + `customFields` | `@timestamp` (UTC), `service_name`, `environment` |
 
+Every field name the library writes is published as a `const` on `CanonicalFields` (in `canonical-log-core`), grouped and documented with its type and semantics. Reference the constant (`CanonicalFields.HTTP_ROUTE`, `CanonicalFields.DB_QUERY_COUNT`, ...) from handler code and query builders instead of a string literal, so a rename is a compile error rather than a silently-diverged dashboard. It's a constants file, not a schema — handlers can still `put` any key they like.
+
+**Precedence.** Adapter `enrich` runs *after* the handler block, so for the same key the adapter's value wins. The reference adapter deliberately defers to a handler-set `error_reason` / `cancel_reason` (it checks before writing its own default); everything else it writes — status, durations, identity — overwrites. Follow the same check-before-default pattern in custom adapters for fields a handler is expected to own.
+
 ### Querying tip
 
 `error=true` is set by both the marked-failure path and the thrown-failure path. To distinguish them: a thrown failure has `error_class`, a marked failure has only `error_reason`. Convention for query authors: `error="true"` matches both, `error="true" AND _exists_:error_class` filters to thrown, `error="true" AND NOT _exists_:error_class` filters to handler-flagged business failures. The "absent means false" rule applies — `error` is omitted on success rather than emitted as `false`.
