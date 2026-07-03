@@ -10,14 +10,18 @@ import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 private val nullAdapter = object : WorkUnitAdapter<String> {
@@ -226,6 +230,81 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
         it("is a no-op — request still succeeds, no exception") {
             server.enqueue(MockResponse(code = 200, body = "ok"))
             get(client(), server.url("/").toString()) shouldBe 200
+        }
+    }
+
+    describe("enqueue() with a request-tagged context") {
+        // enqueue() runs the interceptor on OkHttp's dispatcher threads, where the
+        // work unit's threadlocal binding is absent. withCanonicalContext() tags the
+        // request at build time (on the caller's thread, where the binding is live)
+        // so the interceptor resolves the originating work unit off the tag instead.
+        it("contributes to the originating work unit") {
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+            var snap: Map<String, Any> = emptyMap()
+            val c = client()
+
+            withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                val done = CountDownLatch(1)
+                val request = Request.Builder()
+                    .url(server.url("/").toString())
+                    .withCanonicalContext()
+                    .build()
+                c.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) = done.countDown()
+                    override fun onResponse(call: Call, response: Response) {
+                        response.close()
+                        done.countDown()
+                    }
+                })
+                done.await(5, TimeUnit.SECONDS) shouldBe true
+            }
+
+            snap["http_client_request_count"] shouldBe 1L
+            (snap["http_client_request_duration_ms_total"] as Long).shouldBeGreaterThanOrEqual(0L)
+        }
+
+        it("is a no-op for an untagged enqueue() — the tag is opt-in") {
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+            var snap: Map<String, Any> = emptyMap()
+            val c = client()
+
+            withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) {
+                val done = CountDownLatch(1)
+                val request = Request.Builder()
+                    .url(server.url("/").toString())
+                    .build()
+                c.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) = done.countDown()
+                    override fun onResponse(call: Call, response: Response) {
+                        response.close()
+                        done.countDown()
+                    }
+                })
+                done.await(5, TimeUnit.SECONDS) shouldBe true
+            }
+
+            snap.containsKey("http_client_request_count") shouldBe false
+        }
+
+        it("attaches no tag when captured outside a work unit, so the call stays a no-op") {
+            // withCanonicalContext() with no active work unit resolves to a null context
+            // and tags nothing — an enqueue() built this way contributes nowhere and,
+            // importantly, doesn't NPE the interceptor.
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+
+            val request = Request.Builder()
+                .url(server.url("/").toString())
+                .withCanonicalContext()
+                .build()
+            val done = CountDownLatch(1)
+            client().newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) = done.countDown()
+                override fun onResponse(call: Call, response: Response) {
+                    response.close()
+                    done.countDown()
+                }
+            })
+            done.await(5, TimeUnit.SECONDS) shouldBe true
         }
     }
 })
