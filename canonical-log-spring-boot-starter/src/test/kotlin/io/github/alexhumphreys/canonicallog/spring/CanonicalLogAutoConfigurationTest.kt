@@ -132,6 +132,26 @@ class CanonicalLogAutoConfigurationTest : DescribeSpec({
                 }
         }
 
+        it("applies canonical-log.http.mdc-enabled=false to the process-wide CanonicalLogMdc switch") {
+            try {
+                runner.withPropertyValues("canonical-log.http.mdc-enabled=false").run { ctx ->
+                    ctx.getBean(CanonicalLogFilter::class.java) // force refresh side effects
+                    io.github.alexhumphreys.canonicallog.CanonicalLogMdc.enabled shouldBe false
+
+                    val req = MockHttpServletRequest("GET", "/no-mdc")
+                    var mdcDuringChain: Any? = Any()
+                    ctx.getBean(CanonicalLogFilter::class.java)
+                        .doFilter(req, MockHttpServletResponse().apply { status = 200 }) { _, _ ->
+                            mdcDuringChain = org.slf4j.MDC.get("work_unit_id")
+                        }
+                    mdcDuringChain shouldBe null
+                }
+            } finally {
+                // The switch is process-wide; don't leak the opt-out into other tests.
+                io.github.alexhumphreys.canonicallog.CanonicalLogMdc.enabled = true
+            }
+        }
+
         it("injects a user CanonicalLogSampler bean into the filter") {
             runner
                 .withBean(ErrorsOnlySampler::class.java)

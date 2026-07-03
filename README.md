@@ -169,6 +169,16 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 
 `error=true` is set by both the marked-failure path and the thrown-failure path. To distinguish them: a thrown failure has `error_class`, a marked failure has only `error_reason`. Convention for query authors: `error="true"` matches both, `error="true" AND _exists_:error_class` filters to thrown, `error="true" AND NOT _exists_:error_class` filters to handler-flagged business failures. The "absent means false" rule applies — `error` is omitted on success rather than emitted as `false`.
 
+### Correlating with debug logs
+
+For the duration of a work unit the library mirrors `work_unit_id` into slf4j MDC, so every ordinary log line written while handling the request carries the same id as the canonical line. Jumping from a canonical line to the debug logs of that request (or back) is one equality query:
+
+```
+{service_name="canonical-log-sample"} | json | work_unit_id="97db3003-740b-460c-b458-d648111c56f6"
+```
+
+The logstash encoder includes MDC fields by default, so this works with the sample's `logback-spring.xml` as-is. The mirror follows the work unit everywhere contributions do: across coroutine dispatcher switches (no `MDCContext` pairing needed), onto executor threads via the `propagatingCanonicalContext()` wrappers, and to the innermost unit under nesting. Shops that already manage MDC themselves can opt out process-wide with `canonical-log.http.mdc-enabled=false` (or `CanonicalLogMdc.enabled = false` when not using the starter).
+
 ## Outcome model
 
 `Outcome` reports lifecycle: `Completed(durationMs)` if the block returned, `Threw(durationMs, cause)` if it threw, `Cancelled(durationMs, cause)` if it was cut off by a `CancellationException` (client disconnect, request timeout, structured-concurrency cancellation). Whether the work was *semantically* successful is up to the handler:

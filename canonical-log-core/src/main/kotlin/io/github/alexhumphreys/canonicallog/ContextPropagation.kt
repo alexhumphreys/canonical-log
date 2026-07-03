@@ -11,9 +11,10 @@ import java.util.concurrent.Executor
  *
  * All three wrappers capture [currentCanonicalContext] **at wrap time** (i.e. on the
  * submitting thread) and bind/restore it around the task's execution on the worker
- * thread. If no work unit is active at wrap time, the original task is returned
- * unchanged — zero overhead, matching the no-op behaviour of [CanonicalLog.put]
- * outside a work unit.
+ * thread — including the MDC `work_unit_id` mirror (see [CanonicalLogMdc]), so log
+ * lines the task writes correlate with the work unit's canonical line. If no work
+ * unit is active at wrap time, the original task is returned unchanged — zero
+ * overhead, matching the no-op behaviour of [CanonicalLog.put] outside a work unit.
  *
  * **The work unit does not wait for these tasks.** Propagation only makes the
  * accumulator *reachable* from the worker thread; the entry point still emits when
@@ -36,10 +37,12 @@ public fun Runnable.propagatingCanonicalContext(): Runnable {
     val captured = currentCanonicalContext() ?: return this
     return Runnable {
         val previous = bindCurrentCanonicalContext(captured)
+        val previousMdc = CanonicalLogMdc.install(captured)
         try {
             run()
         } finally {
             bindCurrentCanonicalContext(previous)
+            CanonicalLogMdc.restore(previousMdc)
         }
     }
 }
@@ -50,10 +53,12 @@ public fun <V> Callable<V>.propagatingCanonicalContext(): Callable<V> {
     val captured = currentCanonicalContext() ?: return this
     return Callable {
         val previous = bindCurrentCanonicalContext(captured)
+        val previousMdc = CanonicalLogMdc.install(captured)
         try {
             call()
         } finally {
             bindCurrentCanonicalContext(previous)
+            CanonicalLogMdc.restore(previousMdc)
         }
     }
 }

@@ -33,7 +33,9 @@ public typealias EmitFn = (CanonicalLogContext) -> Unit
  *
  * Lifecycle:
  *  1. Build a [CanonicalLogContext] from `adapter.describe(input)`.
- *  2. Install it as the current-thread canonical context.
+ *  2. Install it as the current-thread canonical context, and mirror the work unit
+ *     id into slf4j MDC under `work_unit_id` for log correlation (see
+ *     [CanonicalLogMdc]; both are restored on unwind).
  *  3. Run [block] with the context.
  *  4. Call `adapter.enrich` exactly once with the resulting [Outcome].
  *  5. Restore the previous threadlocal binding and call [emit] — both always run.
@@ -86,6 +88,7 @@ public fun <T, R> withCanonicalLogBlocking(
         recordNesting(ctx, previous)
     }
     threadLocalContext.set(ctx)
+    val previousMdc = CanonicalLogMdc.install(ctx)
     val startNs = System.nanoTime()
     // We catch Exception, not Throwable: Error subclasses (OOM, StackOverflow, etc.)
     // mean the JVM is in an unrecoverable state and trying to enrich/emit on top of
@@ -97,6 +100,7 @@ public fun <T, R> withCanonicalLogBlocking(
         Result.failure(e)
     } catch (t: Throwable) {
         threadLocalContext.set(previous)
+        CanonicalLogMdc.restore(previousMdc)
         throw t
     }
     val outcome = outcomeOf(blockResult, startNs)
@@ -106,6 +110,7 @@ public fun <T, R> withCanonicalLogBlocking(
         runEnrich(adapter, ctx, input, outcome)
     } finally {
         threadLocalContext.set(previous)
+        CanonicalLogMdc.restore(previousMdc)
     }
     safeEmit(emit, ctx)
     return blockResult.getOrThrow()
@@ -149,7 +154,10 @@ public fun <T, R> withCanonicalLogBlocking(
  * not explicitly capture and restore a previous threadlocal binding around the block.
  * Restoration is delegated to the [CanonicalLogElement] `ThreadContextElement`
  * (`updateThreadContext`/`restoreThreadContext`), which saves the previous binding on
- * every dispatch and restores it on every suspension. This is also what implements
+ * every dispatch and restores it on every suspension. The element also mirrors the
+ * work unit id into slf4j MDC under `work_unit_id` with the same per-dispatch
+ * save/restore (see [CanonicalLogMdc]), so ordinary log lines correlate across
+ * dispatcher switches without pairing this with `MDCContext`. This is also what implements
  * the nesting contract here: the same-`Key` element merge means the innermost unit's
  * element wins while it is open, and the enclosing binding (from an outer element or
  * an outer blocking entry point) is restored on each thread as the inner coroutine

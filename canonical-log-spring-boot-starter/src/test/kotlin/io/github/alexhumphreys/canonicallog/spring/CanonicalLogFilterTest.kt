@@ -134,6 +134,52 @@ class CanonicalLogFilterTest : DescribeSpec({
             io.github.alexhumphreys.canonicallog.currentCanonicalContext() shouldBe null
         }
 
+        it("binds work_unit_id in MDC during the request so ordinary log lines correlate, and clears it after") {
+            val appLogAppender = ListAppender<ILoggingEvent>().also { it.start() }
+            val appLogger = LoggerFactory.getLogger("sample-app") as LogbackLogger
+            appLogger.addAppender(appLogAppender)
+            appLogger.level = Level.INFO
+            try {
+                val req = MockHttpServletRequest("GET", "/sync")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                var workUnitId: String? = null
+                CanonicalLogFilter().doFilter(req, res) { _, _ ->
+                    workUnitId = io.github.alexhumphreys.canonicallog
+                        .currentCanonicalContext()?.workUnit?.id
+                    appLogger.info("an ordinary line during the request")
+                }
+                // Logback stamps each event with the MDC at log time — the ordinary
+                // line carries the same id the canonical line will report.
+                (workUnitId == null) shouldBe false
+                appLogAppender.list.single().mdcPropertyMap["work_unit_id"] shouldBe workUnitId
+                org.slf4j.MDC.get("work_unit_id") shouldBe null
+            } finally {
+                appLogger.detachAppender(appLogAppender)
+            }
+        }
+
+        it("clears MDC on the servlet thread after an async request even though emit is deferred") {
+            val req = MockHttpServletRequest("GET", "/async").apply { isAsyncSupported = true }
+            val res = MockHttpServletResponse().apply { status = 200 }
+            var mdcDuringChain: String? = null
+            val chain = FilterChain { _, _ ->
+                mdcDuringChain = org.slf4j.MDC.get("work_unit_id")
+                req.startAsync(req, res)
+            }
+            CanonicalLogFilter().doFilter(req, res, chain)
+            (mdcDuringChain == null) shouldBe false
+            org.slf4j.MDC.get("work_unit_id") shouldBe null
+        }
+
+        it("clears MDC even when the handler throws") {
+            val req = MockHttpServletRequest("GET", "/boom")
+            val res = MockHttpServletResponse().apply { status = 500 }
+            runCatching {
+                CanonicalLogFilter().doFilter(req, res) { _, _ -> error("kaboom") }
+            }
+            org.slf4j.MDC.get("work_unit_id") shouldBe null
+        }
+
         it("clears the threadlocal even when the handler throws") {
             val req = MockHttpServletRequest("GET", "/boom")
             val res = MockHttpServletResponse().apply { status = 500 }

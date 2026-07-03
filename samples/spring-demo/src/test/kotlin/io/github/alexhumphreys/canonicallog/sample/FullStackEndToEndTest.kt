@@ -101,5 +101,28 @@ class FullStackEndToEndTest : DescribeSpec({
             // Handler-supplied fields — proves CanonicalLog.put landed during the request.
             snap["post_id"] shouldBe 1L
         }
+
+        it("ordinary app log lines carry the canonical line's work_unit_id via MDC") {
+            appender.list.clear()
+            // Attach after boot, same gotcha as the canonical appender above.
+            val appAppender = ListAppender<ILoggingEvent>().also { it.start() }
+            val appLogger = LoggerFactory.getLogger(PostsController::class.java) as LogbackLogger
+            appLogger.addAppender(appAppender)
+            appLogger.level = Level.INFO
+            try {
+                client.newCall(
+                    Request.Builder().url("http://localhost:$port/posts/1").build(),
+                ).execute().use { it.code shouldBe 200 }
+
+                val snap = lastCanonicalSnapshot(appender)
+                    ?: error("no canonical line was emitted")
+                val ordinary = appAppender.list.lastOrNull { it.message.startsWith("fetching post") }
+                    ?: error("the handler's ordinary log line was not captured")
+
+                ordinary.mdcPropertyMap["work_unit_id"] shouldBe snap["work_unit_id"]
+            } finally {
+                appLogger.detachAppender(appAppender)
+            }
+        }
     }
 })

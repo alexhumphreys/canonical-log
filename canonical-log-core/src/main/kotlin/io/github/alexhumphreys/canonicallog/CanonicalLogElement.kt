@@ -23,6 +23,11 @@ public fun currentCanonicalContext(): CanonicalLogContext? = threadLocalContext.
  * the work-unit lifecycle outside a single function call (e.g. a servlet filter
  * that opens the work unit before chain dispatch and emits asynchronously after
  * the response completes).
+ *
+ * This binds the threadlocal only — it does not mirror the id into MDC, because its
+ * restore-by-rebinding contract can't carry MDC's previous value through. Entry
+ * points that want log correlation pair it with [CanonicalLogMdc.install]/
+ * [CanonicalLogMdc.restore].
  */
 @DelicateCanonicalLogApi
 public fun bindCurrentCanonicalContext(context: CanonicalLogContext?): CanonicalLogContext? {
@@ -33,17 +38,31 @@ public fun bindCurrentCanonicalContext(context: CanonicalLogContext?): Canonical
 
 public class CanonicalLogElement internal constructor(
     public val context: CanonicalLogContext,
-) : AbstractCoroutineContextElement(Key), ThreadContextElement<CanonicalLogContext?> {
+) : AbstractCoroutineContextElement(Key), ThreadContextElement<CanonicalLogElement.Restore> {
 
     public companion object Key : CoroutineContext.Key<CanonicalLogElement>
 
-    override fun updateThreadContext(context: CoroutineContext): CanonicalLogContext? {
+    /**
+     * Per-dispatch saved thread state: the previous threadlocal binding plus the
+     * previous MDC `work_unit_id` value (see [CanonicalLogMdc]) — both restored
+     * together on every suspension, so MDC stays in lockstep with the binding
+     * across dispatcher switches.
+     */
+    public class Restore internal constructor(
+        internal val context: CanonicalLogContext?,
+        internal val mdcValue: String?,
+    )
+
+    @OptIn(DelicateCanonicalLogApi::class)
+    override fun updateThreadContext(context: CoroutineContext): Restore {
         val previous = threadLocalContext.get()
         threadLocalContext.set(this.context)
-        return previous
+        return Restore(previous, CanonicalLogMdc.install(this.context))
     }
 
-    override fun restoreThreadContext(context: CoroutineContext, oldState: CanonicalLogContext?) {
-        threadLocalContext.set(oldState)
+    @OptIn(DelicateCanonicalLogApi::class)
+    override fun restoreThreadContext(context: CoroutineContext, oldState: Restore) {
+        threadLocalContext.set(oldState.context)
+        CanonicalLogMdc.restore(oldState.mdcValue)
     }
 }

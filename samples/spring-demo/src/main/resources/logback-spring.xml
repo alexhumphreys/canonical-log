@@ -7,6 +7,10 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <timeZone>UTC</timeZone>
             <includeContext>false</includeContext>
+            <!-- includeMdc defaults to true: ordinary log lines carry the work_unit_id
+                 the canonical-log filter mirrors into MDC, so they join to the request's
+                 canonical line with a single equality query. -->
+            <includeMdc>true</includeMdc>
             <customFields>{"service_name":"${serviceName}","environment":"${environment}"}</customFields>
         </encoder>
     </appender>

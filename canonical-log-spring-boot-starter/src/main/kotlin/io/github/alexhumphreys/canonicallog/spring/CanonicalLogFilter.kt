@@ -1,6 +1,7 @@
 package io.github.alexhumphreys.canonicallog.spring
 
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
+import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
 import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
@@ -31,7 +32,10 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * Lifecycle:
  *  1. On request entry: create [CanonicalLogContext], install it as the
  *     current-thread canonical context (so blocking-thread contributors see it
- *     without any explicit setup).
+ *     without any explicit setup), and mirror the work unit id into slf4j MDC
+ *     under `work_unit_id` — every ordinary log line the handler writes on this
+ *     thread correlates with the canonical line. Opt out process-wide with
+ *     `canonical-log.http.mdc-enabled=false` (see [CanonicalLogMdc]).
  *  2. Invoke `chain.doFilter`. If the handler is synchronous, control returns here
  *     after the response is fully rendered; the filter enriches and emits inline.
  *  3. If `chain.doFilter` returned but `request.isAsyncStarted` is `true`, the
@@ -90,6 +94,7 @@ public class CanonicalLogFilter(
         val exchange = HttpExchange(request, response)
         val ctx = CanonicalLogContext(adapter.describe(exchange))
         val previous = bindCurrentCanonicalContext(ctx)
+        val previousMdc = CanonicalLogMdc.install(ctx)
         val startNs = System.nanoTime()
 
         fun emit(error: Throwable?) {
@@ -157,6 +162,7 @@ public class CanonicalLogFilter(
             throw t
         } finally {
             bindCurrentCanonicalContext(previous)
+            CanonicalLogMdc.restore(previousMdc)
         }
     }
 

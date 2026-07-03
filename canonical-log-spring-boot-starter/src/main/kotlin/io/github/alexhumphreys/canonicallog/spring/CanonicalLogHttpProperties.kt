@@ -26,4 +26,15 @@ public class CanonicalLogHttpProperties {
      * slash-asterisk sequence would open a nested Kotlin comment.)
      */
     public var excludePaths: List<String> = emptyList()
+
+    /**
+     * Whether the library mirrors the active work unit's id into slf4j MDC under
+     * `work_unit_id`, so ordinary log lines written during a request correlate
+     * with its canonical line. Applied to the process-wide
+     * `CanonicalLogMdc.enabled` switch at startup, so it also governs the core
+     * entry points and propagation helpers, not just the HTTP filter. Set to
+     * `false` if your shop already manages MDC and doesn't want the library
+     * touching it.
+     */
+    public var mdcEnabled: Boolean = true
 }

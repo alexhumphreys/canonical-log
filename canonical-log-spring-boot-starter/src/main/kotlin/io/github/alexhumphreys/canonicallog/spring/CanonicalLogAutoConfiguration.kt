@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.spring
 
+import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -19,7 +20,13 @@ import org.springframework.core.Ordered
     matchIfMissing = true,
 )
 @EnableConfigurationProperties(CanonicalLogHttpProperties::class)
-public open class CanonicalLogAutoConfiguration {
+public open class CanonicalLogAutoConfiguration(properties: CanonicalLogHttpProperties) {
+
+    init {
+        // Process-wide switch, applied once at startup: it must also govern the core
+        // entry points and propagation helpers, which a per-filter flag couldn't reach.
+        CanonicalLogMdc.enabled = properties.mdcEnabled
+    }
 
     /**
      * User beans win over the defaults: a `WorkUnitAdapter<HttpExchange>` bean replaces

@@ -4,6 +4,7 @@ import io.github.alexhumphreys.canonicallog.CanonicalLog
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.bind.annotation.GetMapping
@@ -32,6 +33,7 @@ class PostsController(
     private val upstream: MockWebServer,
     @param:Value("\${canonical-log.sample.upstream.url:}") private val configuredUpstream: String,
 ) {
+    private val log = LoggerFactory.getLogger(PostsController::class.java)
 
     @GetMapping("/posts/{id}/explode")
     fun explode(@PathVariable id: Long): Nothing {
@@ -46,6 +48,9 @@ class PostsController(
     @GetMapping("/posts/{id}")
     fun getPost(@PathVariable id: Long): PostResponse {
         CanonicalLog.put("post_id", id)
+        // An ordinary debug-style line: it carries the request's work_unit_id via MDC,
+        // demonstrating the jump from a canonical line to the app logs of the same request.
+        log.info("fetching post {}", id)
 
         val title = jdbc.queryForList(
             "SELECT title FROM posts WHERE id = ?",
