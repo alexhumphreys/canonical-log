@@ -58,3 +58,28 @@ curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/posts/999
 ```
 
 Returns `404`, and the canonical line shows `error=true`, `error_reason=post_not_found`, `post_id=999` — the handler's `CanonicalLog.markFailed("post_not_found", "post_id" to id)` call survives unchanged through the adapter.
+
+## Non-HTTP entry point (scheduled job)
+
+The same canonical-log machinery works outside HTTP. `ReportingJob` is a `@Scheduled` job that opens a work unit by hand with a hand-written `ScheduledJobAdapter` — see [the "Beyond HTTP" section in the top-level README](../../README.md#beyond-http-opening-a-work-unit-by-hand). It's off by default; enable it:
+
+```sh
+./gradlew :samples:spring-demo:bootRun --args='--canonical-log.sample.scheduled-job.enabled=true'
+```
+
+Every few seconds you'll see a canonical line with no HTTP fields:
+
+```json
+{
+  "logger_name": "canonical",
+  "work_unit_kind": "scheduled_job",
+  "job_name": "daily_report",
+  "job_duration_ms": 4,
+  "db_query_count": 1,
+  "db_execution_count": 1,
+  "report_row_count": 2,
+  "work_unit_id": "…"
+}
+```
+
+`db_query_count` is there because the JDBC contributor resolves the active work unit off the running thread — it doesn't know or care that this unit wasn't opened by the HTTP filter.

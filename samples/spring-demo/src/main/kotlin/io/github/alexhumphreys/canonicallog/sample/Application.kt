@@ -7,9 +7,11 @@ import okhttp3.OkHttpClient
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
+import org.springframework.scheduling.annotation.EnableScheduling
 import jakarta.annotation.PreDestroy
 
 @SpringBootApplication
+@EnableScheduling
 class Application {
 
     private val upstream = MockWebServer()

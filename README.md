@@ -194,6 +194,37 @@ The HTTP adapter defers to handler-set `error_reason` and only injects defaults 
 
 Cancellation is not a failure: a `Cancelled` line carries `cancelled=true` and a `cancel_reason` (`async_timeout` when the servlet async timeout fired, `cancelled` otherwise) instead of `error=true`, so timeouts and client disconnects don't pollute error rates. The HTTP adapter reports status `499` (nginx's "client closed request" convention) for cancelled requests unless an error status was already set. The `CancellationException` itself is always rethrown after the line is emitted — observing cancellation never breaks structured concurrency.
 
+## Beyond HTTP: opening a work unit by hand
+
+The HTTP filter is just one entry point. `WorkUnitAdapter` generalizes to any unit of work — a Kafka consume, a `@Scheduled` job, a message handler. You write an adapter and open the unit with `withCanonicalLogBlocking` (or `withCanonicalLog` for suspend code); everything downstream — the accumulator, the JDBC/OkHttp contributors, MDC correlation — works unchanged, because contributors resolve the active unit off the current thread, not off anything HTTP-specific.
+
+The sample demonstrates this with a `@Scheduled` job ([`ReportingJob`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ReportingJob.kt) + [`ScheduledJobAdapter`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ScheduledJobAdapter.kt)):
+
+```kotlin
+class ScheduledJobAdapter : WorkUnitAdapter<String> {
+    override fun describe(input: String) =
+        WorkUnit(UUID.randomUUID().toString(), "scheduled_job", Instant.now())
+
+    override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
+        ctx.put(CanonicalFields.WORK_UNIT_ID, ctx.workUnit.id)
+        ctx.put(CanonicalFields.WORK_UNIT_KIND, ctx.workUnit.kind)
+        ctx.put("job_name", input)
+        ctx.put("job_duration_ms", outcome.durationMs)
+        // ... plus error markers on Outcome.Threw, same as HttpWorkUnitAdapter
+    }
+}
+
+// in the job:
+withCanonicalLogBlocking(adapter, "daily_report", writer::write) {
+    val rows = jdbc.queryForObject("SELECT count(*) FROM posts", Long::class.java)
+    CanonicalLog.put("report_row_count", rows) // db_query_count lands automatically
+}
+```
+
+The job run emits its own line with `work_unit_kind=scheduled_job` and the JDBC contributor's `db_query_count` — no HTTP involved. It's off by default (so it doesn't add background noise); enable it with `--canonical-log.sample.scheduled-job.enabled=true`. Pinned by `ReportingJobEndToEndTest`.
+
+One rough edge a job author hits that the HTTP filter hides: the emit sink isn't injectable, so the job constructs a `LogstashCanonicalLineWriter()` directly. Tracked in `docs/todos/019-job-entry-point-ergonomics.md`.
+
 ## Sample
 
 See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end on `localhost:8080` with H2 + an in-process MockWebServer for outbound calls.

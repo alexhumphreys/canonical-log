@@ -226,6 +226,7 @@ POC modules listed in the layout section above are all implemented and working. 
 
 1. **Success case** (`GET /posts/1`, 200): contributor model collapses HTTP, DB client, JDBC, and handler-supplied fields into one line.
 2. **Marked-failure case** (`GET /posts/999`, 404): handler calls `markFailed("post_not_found")`; line emits `error=true error_reason=post_not_found` with no `error_class`.
+3. **Non-HTTP entry point** (todo 009): a `@Scheduled` job (`ReportingJob` + `ScheduledJobAdapter`) opens a work unit by hand via `withCanonicalLogBlocking`, emitting a line with `work_unit_kind=scheduled_job` and the JDBC contributor's `db_query_count` (proving contributors are entry-point-agnostic — they resolve the unit off the thread, not off anything HTTP). Off by default (`@ConditionalOnProperty` on `canonical-log.sample.scheduled-job.enabled`, matchIfMissing false) so it doesn't inject background lines into the HTTP tests (which assert on the *last* canonical line / count all lines) or noise into the demo; enable with `--canonical-log.sample.scheduled-job.enabled=true`. Pinned by `ReportingJobEndToEndTest`. Friction found and left as todo 019: no injectable `CanonicalLineWriter` bean exists, so the job constructs `LogstashCanonicalLineWriter()` itself (MDC, by contrast, is free — `withCanonicalLogBlocking` installs it).
 
 Real example log lines are committed inline in the top-level `README.md`.
 
