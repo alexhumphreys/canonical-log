@@ -82,37 +82,27 @@ public fun <T, R> withCanonicalLogBlocking(
     emit: EmitFn,
     block: (CanonicalLogContext) -> R,
 ): R {
-    val ctx = CanonicalLogContext(adapter.describe(input))
-    val previous = threadLocalContext.get()
-    if (previous != null) {
-        recordNesting(ctx, previous)
-    }
-    threadLocalContext.set(ctx)
-    val previousMdc = CanonicalLogMdc.install(ctx)
-    val startNs = System.nanoTime()
+    val scope = openCanonicalWorkUnit(adapter, input)
     // We catch Exception, not Throwable: Error subclasses (OOM, StackOverflow, etc.)
     // mean the JVM is in an unrecoverable state and trying to enrich/emit on top of
-    // that is more likely to obscure the failure than to help. Restore the threadlocal
-    // and let it propagate.
+    // that is more likely to obscure the failure than to help. Unbind and let it propagate.
     val blockResult: Result<R> = try {
-        Result.success(block(ctx))
+        Result.success(block(scope.context))
     } catch (e: Exception) {
         Result.failure(e)
     } catch (t: Throwable) {
-        threadLocalContext.set(previous)
-        CanonicalLogMdc.restore(previousMdc)
+        scope.unbind()
         throw t
     }
-    val outcome = outcomeOf(blockResult, startNs)
+    val outcome = scope.outcomeFor(blockResult.exceptionOrNull())
     // The finally guards the threadlocal against an Error escaping enrich (Exceptions
-    // are swallowed inside runEnrich; Errors propagate per the rationale above).
+    // are swallowed inside enrich; Errors propagate per the rationale above).
     try {
-        runEnrich(adapter, ctx, input, outcome)
+        scope.enrich(adapter, input, outcome)
     } finally {
-        threadLocalContext.set(previous)
-        CanonicalLogMdc.restore(previousMdc)
+        scope.unbind()
     }
-    safeEmit(emit, ctx)
+    scope.emit(emit)
     return blockResult.getOrThrow()
 }
 
@@ -233,6 +223,79 @@ public suspend fun <R> withCanonicalCoroutineContext(
 }
 
 /**
+ * A blocking, thread-bound canonical work-unit lifecycle exposed as an open/close pair, for
+ * entry points that receive their lifecycle boundaries as *separate callbacks* and so can't
+ * use the [withCanonicalLogBlocking] closure form: a servlet filter that binds on request
+ * entry but emits from an async listener, or a Micrometer `ObservationHandler` whose
+ * `onScopeOpened` / `onStop` bracket the work.
+ *
+ * [openCanonicalWorkUnit] binds the context (threadlocal + MDC, recording nesting under any
+ * already-active unit); the returned scope drives the tail — [outcomeFor] classifies a
+ * terminal throwable into an [Outcome], [enrich] runs the adapter under the swallow-and-record
+ * guard, [unbind] restores the previous binding, and [emit] publishes under the
+ * swallow-and-warn guard. The caller sequences [unbind] against [enrich]/[emit] itself,
+ * because async entry points must unbind on the originating thread *before* finalizing later
+ * (and possibly elsewhere).
+ *
+ * This is the shared blocking lifecycle behind [withCanonicalLogBlocking] and the servlet
+ * filter. It deliberately does not cover the suspend path ([withCanonicalLog]), whose binding
+ * is the [CanonicalLogElement] `ThreadContextElement`'s responsibility — keeping the coroutine
+ * bridge out of this primitive's scope.
+ */
+@DelicateCanonicalLogApi
+public class CanonicalWorkUnitScope internal constructor(
+    /** The bound work-unit context; contributors and [CanonicalLog] resolve to it while bound. */
+    public val context: CanonicalLogContext,
+    private val previousContext: CanonicalLogContext?,
+    private val previousMdc: String?,
+    private val startNs: Long,
+) {
+    /**
+     * Classify how the work terminated, using elapsed time since [openCanonicalWorkUnit]:
+     * `null` → [Outcome.Completed], a [CancellationException] → [Outcome.Cancelled], else
+     * [Outcome.Threw].
+     */
+    public fun outcomeFor(error: Throwable?): Outcome = classifyOutcome(error, elapsedMs(startNs))
+
+    /**
+     * Run `adapter.enrich`, swallowing a throwing enrich and recording it on the line via
+     * `canonical_log_enrich_error*` (see [WorkUnitAdapter]). Telemetry never fails the work.
+     */
+    public fun <T> enrich(adapter: WorkUnitAdapter<T>, input: T, outcome: Outcome) {
+        runEnrich(adapter, context, input, outcome)
+    }
+
+    /** Restore the threadlocal + MDC binding displaced at [openCanonicalWorkUnit]. Call exactly once. */
+    public fun unbind() {
+        threadLocalContext.set(previousContext)
+        CanonicalLogMdc.restore(previousMdc)
+    }
+
+    /** Publish the finalized line via [emit], swallowing and warning on a throwing emit (see [EmitFn]). */
+    public fun emit(emit: EmitFn) {
+        safeEmit(emit, context)
+    }
+}
+
+/**
+ * Open a blocking canonical work unit: describe it, record nesting if one is already active on
+ * this thread, bind it as the current-thread context, and mirror the id into MDC. Returns a
+ * [CanonicalWorkUnitScope] the caller finalizes — see that class for when to reach for this
+ * over the [withCanonicalLogBlocking] closure.
+ */
+@DelicateCanonicalLogApi
+public fun <T> openCanonicalWorkUnit(adapter: WorkUnitAdapter<T>, input: T): CanonicalWorkUnitScope {
+    val ctx = CanonicalLogContext(adapter.describe(input))
+    val previous = threadLocalContext.get()
+    if (previous != null) {
+        recordNesting(ctx, previous)
+    }
+    threadLocalContext.set(ctx)
+    val previousMdc = CanonicalLogMdc.install(ctx)
+    return CanonicalWorkUnitScope(ctx, previous, previousMdc, System.nanoTime())
+}
+
+/**
  * Record the nesting markers on a unit opened inside [parent]: `parent_work_unit_id`
  * (immediate parent only) and `work_unit_depth` (parent's depth + 1). Top-level units
  * carry neither field — absent means depth 0. The depth is read back from the parent's
@@ -246,19 +309,21 @@ private fun recordNesting(ctx: CanonicalLogContext, parent: CanonicalLogContext)
 }
 
 /**
- * Map the block's [Result] to the lifecycle [Outcome]. Cancellation is classified by
- * exception type — see [Outcome.Cancelled] for why the current job is not consulted.
- * The caller rethrows via `getOrThrow()` either way; this only decides what the line says.
+ * Classify how a work unit terminated into a lifecycle [Outcome]: `null` (the block returned)
+ * is [Outcome.Completed]; a [CancellationException] is [Outcome.Cancelled]; anything else is
+ * [Outcome.Threw]. Cancellation is classified by exception type — see [Outcome.Cancelled] for
+ * why the current job is not consulted. This only decides what the line says; the caller still
+ * rethrows.
  */
-private fun outcomeOf(blockResult: Result<*>, startNs: Long): Outcome = blockResult.fold(
-    onSuccess = { Outcome.Completed(elapsedMs(startNs)) },
-    onFailure = { cause ->
-        when (cause) {
-            is CancellationException -> Outcome.Cancelled(elapsedMs(startNs), cause)
-            else -> Outcome.Threw(elapsedMs(startNs), cause)
-        }
-    },
-)
+private fun classifyOutcome(error: Throwable?, durationMs: Long): Outcome = when (error) {
+    null -> Outcome.Completed(durationMs)
+    is CancellationException -> Outcome.Cancelled(durationMs, error)
+    else -> Outcome.Threw(durationMs, error)
+}
+
+/** Map the block's [Result] to an [Outcome]; the suspend path's [Result]-shaped entry to [classifyOutcome]. */
+private fun outcomeOf(blockResult: Result<*>, startNs: Long): Outcome =
+    classifyOutcome(blockResult.exceptionOrNull(), elapsedMs(startNs))
 
 private fun <T> runEnrich(
     adapter: WorkUnitAdapter<T>,

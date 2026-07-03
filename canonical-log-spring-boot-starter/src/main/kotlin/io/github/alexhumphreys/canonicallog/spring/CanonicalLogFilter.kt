@@ -6,7 +6,7 @@ import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
 import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
-import io.github.alexhumphreys.canonicallog.bindCurrentCanonicalContext
+import io.github.alexhumphreys.canonicallog.openCanonicalWorkUnit
 import jakarta.servlet.AsyncEvent
 import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
@@ -93,35 +93,23 @@ public class CanonicalLogFilter(
         filterChain: FilterChain,
     ) {
         val exchange = HttpExchange(request, response)
-        val ctx = CanonicalLogContext(adapter.describe(exchange))
-        val previous = bindCurrentCanonicalContext(ctx)
-        val previousMdc = CanonicalLogMdc.install(ctx)
-        val startNs = System.nanoTime()
+        // Open the blocking work-unit scope (bind threadlocal + MDC, record nesting). The
+        // filter drives the tail itself instead of the withCanonicalLogBlocking closure,
+        // because on the async path emit happens later from an AsyncListener — so it must
+        // unbind on this thread (finally) independently of when enrich/emit run.
+        val scope = openCanonicalWorkUnit(adapter, exchange)
+        val ctx = scope.context
 
         fun emit(error: Throwable?) {
-            val outcome = when {
-                // Cancellation (client disconnect, async timeout) is not a failure:
-                // Outcome.Cancelled → cancelled=true on the line, no error=true. Same
-                // classification rule as core's withCanonicalLog, so the servlet and
-                // suspend entry points tell the same story.
-                error is CancellationException -> Outcome.Cancelled(elapsedMs(startNs), error)
-                error != null -> Outcome.Threw(elapsedMs(startNs), error)
-                else -> Outcome.Completed(elapsedMs(startNs))
-            }
+            // Cancellation (client disconnect, async timeout) is not a failure — the scope
+            // maps it to Outcome.Cancelled (cancelled=true, no error=true), the same
+            // classification core's withCanonicalLog uses, so the servlet and suspend entry
+            // points tell the same story.
+            val outcome = scope.outcomeFor(error)
             if (error is AsyncTimeoutCancellationException && ctx.snapshot()[CanonicalFields.CANCEL_REASON] == null) {
                 ctx.put(CanonicalFields.CANCEL_REASON, "async_timeout")
             }
-            try {
-                adapter.enrich(ctx, exchange, outcome)
-            } catch (e: Exception) {
-                ctx.put(CanonicalFields.ENRICH_ERROR, true)
-                ctx.put(CanonicalFields.ENRICH_ERROR_CLASS, e::class.qualifiedName ?: "unknown")
-                libraryLogger.warn(
-                    "adapter.enrich threw for work unit {}; failure recorded on the canonical line, request unaffected",
-                    ctx.workUnit.id,
-                    e,
-                )
-            }
+            scope.enrich(adapter, exchange, outcome)
             val keep = try {
                 sampler.shouldEmit(ctx)
             } catch (e: Exception) {
@@ -133,15 +121,7 @@ public class CanonicalLogFilter(
                 true
             }
             if (keep) {
-                try {
-                    writer.write(ctx)
-                } catch (e: Exception) {
-                    libraryLogger.warn(
-                        "writer threw for work unit {}; canonical line dropped, request unaffected",
-                        ctx.workUnit.id,
-                        e,
-                    )
-                }
+                scope.emit { writer.write(it) }
             }
         }
 
@@ -162,12 +142,9 @@ public class CanonicalLogFilter(
             emit(error = t)
             throw t
         } finally {
-            bindCurrentCanonicalContext(previous)
-            CanonicalLogMdc.restore(previousMdc)
+            scope.unbind()
         }
     }
-
-    private fun elapsedMs(startNs: Long): Long = (System.nanoTime() - startNs) / 1_000_000
 }
 
 /**
