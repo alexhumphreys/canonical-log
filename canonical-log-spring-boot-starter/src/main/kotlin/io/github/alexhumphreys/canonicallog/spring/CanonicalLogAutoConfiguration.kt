@@ -1,7 +1,10 @@
 package io.github.alexhumphreys.canonicallog.spring
 
+import io.github.alexhumphreys.canonicallog.CanonicalLineWriter
 import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
+import io.github.alexhumphreys.canonicallog.CanonicalLogSampler
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
+import io.github.alexhumphreys.canonicallog.logstash.LogstashCanonicalLineWriter
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
@@ -29,27 +32,39 @@ public open class CanonicalLogAutoConfiguration(properties: CanonicalLogHttpProp
     }
 
     /**
+     * The default sink, shared with the scheduling starter (todo 020). Registered as a real
+     * `@Bean` guarded by `@ConditionalOnMissingBean(CanonicalLineWriter)` — safe here because
+     * [CanonicalLineWriter] has no type parameter, so CoMB can't misfire the way it would for
+     * the raw-typed `WorkUnitAdapter<T>` (see [canonicalLogFilter]). A user [CanonicalLineWriter]
+     * bean therefore overrides the sink for both the HTTP filter and scheduled-job lines.
+     */
+    @Bean
+    @ConditionalOnMissingBean(CanonicalLineWriter::class)
+    public open fun canonicalLineWriter(): CanonicalLineWriter = LogstashCanonicalLineWriter()
+
+    /**
      * User beans win over the defaults: a `WorkUnitAdapter<HttpExchange>` bean replaces
      * [HttpWorkUnitAdapter] (compose with it for extra uniform fields — see
-     * [CanonicalLogFilter]), a [CanonicalLineWriter] bean replaces the logstash sink,
-     * a [CanonicalLogSampler] bean replaces the emit-all default.
+     * [CanonicalLogFilter]), a [CanonicalLineWriter] bean replaces the logstash sink (via the
+     * [canonicalLineWriter] default above), a [CanonicalLogSampler] bean replaces the emit-all
+     * default.
      *
-     * Resolution uses [ObjectProvider], not `@ConditionalOnMissingBean` on default
-     * beans: CoMB matches raw types, so a user's `WorkUnitAdapter` for a *different*
+     * Adapter and sampler resolution uses [ObjectProvider], not `@ConditionalOnMissingBean` on
+     * default beans: CoMB matches raw types, so a user's `WorkUnitAdapter` for a *different*
      * work-unit type (e.g. Kafka) would wrongly suppress the HTTP default. ObjectProvider
      * resolves against the full generic type, so only a `WorkUnitAdapter<HttpExchange>`
-     * bean is picked up here.
+     * bean is picked up here. The writer is injected directly — see [canonicalLineWriter].
      */
     @Bean
     @ConditionalOnMissingBean
     public open fun canonicalLogFilter(
         properties: CanonicalLogHttpProperties,
         adapter: ObjectProvider<WorkUnitAdapter<HttpExchange>>,
-        writer: ObjectProvider<CanonicalLineWriter>,
+        writer: CanonicalLineWriter,
         sampler: ObjectProvider<CanonicalLogSampler>,
     ): CanonicalLogFilter = CanonicalLogFilter(
         adapter = adapter.getIfAvailable { HttpWorkUnitAdapter() },
-        writer = writer.getIfAvailable { LogstashCanonicalLineWriter() },
+        writer = writer,
         excludePaths = properties.excludePaths,
         sampler = sampler.getIfAvailable { CanonicalLogSampler { true } },
     )

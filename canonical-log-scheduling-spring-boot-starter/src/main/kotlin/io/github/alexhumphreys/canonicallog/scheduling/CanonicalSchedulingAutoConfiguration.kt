@@ -1,14 +1,13 @@
 package io.github.alexhumphreys.canonicallog.scheduling
 
-import io.github.alexhumphreys.canonicallog.EmitFn
+import io.github.alexhumphreys.canonicallog.CanonicalLineWriter
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
-import io.github.alexhumphreys.canonicallog.canonicalLineMessage
+import io.github.alexhumphreys.canonicallog.logstash.LogstashCanonicalLineWriter
 import io.micrometer.observation.ObservationRegistry
-import net.logstash.logback.argument.StructuredArguments
-import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.scheduling.annotation.SchedulingConfigurer
@@ -31,8 +30,18 @@ import org.springframework.scheduling.support.ScheduledTaskObservationContext
  * Requires `@EnableScheduling` in the application (as scheduling always does). Opt out with
  * `canonical-log.scheduling.enabled=false`. Override the job identity/fields by registering a
  * `WorkUnitAdapter<ScheduledTaskObservationContext>` bean (replaces [ScheduledJobWorkUnitAdapter]).
+ *
+ * **Shared sink (todo 020).** The line is written through a [CanonicalLineWriter] bean, so a user
+ * writer bean overrides the sink for scheduled-job lines *and* HTTP lines uniformly. This starter
+ * registers its own default [LogstashCanonicalLineWriter] guarded by
+ * `@ConditionalOnMissingBean(CanonicalLineWriter)` so it works standalone; when the HTTP umbrella
+ * starter is also present, [AutoConfiguration]'s `afterName` ordering (by string class name, so no
+ * compile dependency between starters) makes the umbrella's default register first and this one
+ * back off — exactly one default writer regardless of which starters are on the classpath.
  */
-@AutoConfiguration
+@AutoConfiguration(
+    afterName = ["io.github.alexhumphreys.canonicallog.spring.CanonicalLogAutoConfiguration"],
+)
 @ConditionalOnClass(ScheduledTaskObservationContext::class, ObservationRegistry::class)
 @ConditionalOnProperty(
     name = ["canonical-log.scheduling.enabled"],
@@ -42,37 +51,34 @@ import org.springframework.scheduling.support.ScheduledTaskObservationContext
 public open class CanonicalSchedulingAutoConfiguration {
 
     /**
+     * Default sink, shared with the HTTP starter (todo 020). `@ConditionalOnMissingBean` is safe
+     * because [CanonicalLineWriter] has no type parameter (unlike the raw-typed adapter). When the
+     * HTTP umbrella starter is present it registers this bean first (see the class KDoc's ordering
+     * note), so this default backs off and both starters use the one writer.
+     */
+    @Bean
+    @ConditionalOnMissingBean(CanonicalLineWriter::class)
+    public open fun canonicalLineWriter(): CanonicalLineWriter = LogstashCanonicalLineWriter()
+
+    /**
      * Registers the canonical handler on the resolved observation registry and sets that registry
      * on the scheduling registrar. A user `WorkUnitAdapter<ScheduledTaskObservationContext>` bean
      * wins over the default; resolution uses [ObjectProvider] so an adapter for a *different*
-     * work-unit type isn't mistaken for this one (same reasoning as the HTTP filter's adapter).
+     * work-unit type isn't mistaken for this one (same reasoning as the HTTP filter's adapter). The
+     * [writer] is the shared [CanonicalLineWriter] bean; the handler emits via `writer::write`.
      */
     @Bean
     public open fun canonicalSchedulingConfigurer(
         registryProvider: ObjectProvider<ObservationRegistry>,
         adapterProvider: ObjectProvider<WorkUnitAdapter<ScheduledTaskObservationContext>>,
+        writer: CanonicalLineWriter,
     ): SchedulingConfigurer {
         val registry = registryProvider.getIfAvailable { ObservationRegistry.create() }
         val adapter = adapterProvider.getIfAvailable { ScheduledJobWorkUnitAdapter() }
         registry.observationConfig()
-            .observationHandler(CanonicalScheduledTaskObservationHandler(adapter, canonicalEmit()))
+            .observationHandler(CanonicalScheduledTaskObservationHandler(adapter, writer::write))
         return SchedulingConfigurer { registrar: ScheduledTaskRegistrar ->
             registrar.setObservationRegistry(registry)
-        }
-    }
-
-    /**
-     * Default emit sink: log the snapshot to the `canonical` logger as logstash structured
-     * arguments, identical to the HTTP starter's `LogstashCanonicalLineWriter`. Kept private here
-     * rather than sharing the HTTP starter's writer type, to avoid coupling this starter to the
-     * servlet umbrella — see `docs/todos/019-job-entry-point-ergonomics.md` for the planned
-     * unification of the writer abstraction across entry points.
-     */
-    private fun canonicalEmit(): EmitFn {
-        val logger = LoggerFactory.getLogger("canonical")
-        return { ctx ->
-            val snapshot = ctx.snapshot()
-            logger.info(canonicalLineMessage(snapshot), StructuredArguments.entries(snapshot))
         }
     }
 }
