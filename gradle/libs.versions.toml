@@ -11,6 +11,7 @@ testcontainers = "1.21.4"
 slf4j = "2.0.16"
 logback = "1.5.18"
 junit-jupiter = "5.13.4"
+jackson = "2.18.2"
 postgresql = "42.7.7"
 h2 = "2.3.232"
 jakarta-servlet-api = "5.0.0"
@@ -48,6 +49,10 @@ h2 = { module = "com.h2database:h2", version.ref = "h2" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+
+# Test-scope only: a real JSON parser used as the oracle in JsonCanonicalLineWriter's
+# round-trip property test. Never on any main classpath — core stays dependency-free.
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 
 kotest-runner-junit5 = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
 kotest-assertions-core = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
