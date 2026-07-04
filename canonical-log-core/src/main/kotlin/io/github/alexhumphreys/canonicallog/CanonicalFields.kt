@@ -114,6 +114,15 @@ public object CanonicalFields {
     /** `String` — fully-qualified class name of the exception a throwing `enrich` raised. */
     public const val ENRICH_ERROR_CLASS: String = "canonical_log_enrich_error_class"
 
+    /**
+     * `Boolean` — set when `WorkUnitAdapter.seed` threw. Seed failures are swallowed and
+     * recorded here rather than replacing the block's result (see [WorkUnitAdapter.seed]).
+     */
+    public const val SEED_ERROR: String = "canonical_log_seed_error"
+
+    /** `String` — fully-qualified class name of the exception a throwing `seed` raised. */
+    public const val SEED_ERROR_CLASS: String = "canonical_log_seed_error_class"
+
     // --- Inbound HTTP (canonical-log-spring-boot-starter: HttpWorkUnitAdapter) ---
 
     /** `String` — the request method (`GET`, `POST`, ...). */

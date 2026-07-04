@@ -13,6 +13,18 @@ private val scopeAdapter = object : WorkUnitAdapter<String> {
     }
 }
 
+private val seedingScopeAdapter = object : WorkUnitAdapter<String> {
+    override fun describe(input: String): WorkUnit = WorkUnit(input, "test", Instant.now())
+    override fun seed(ctx: CanonicalLogContext, input: String) {
+        // A seed that reads the ambient binding sees work_unit_id bound already.
+        ctx.put("seeded_field", "from_seed")
+        ctx.put("bound_id_at_seed", currentCanonicalContext()?.workUnit?.id)
+    }
+    override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
+        ctx.put("enriched_kind", outcome::class.simpleName)
+    }
+}
+
 /**
  * Direct contract for the open/close primitive that backs [withCanonicalLogBlocking] and the
  * servlet filter. The closure and filter paths exercise it end-to-end elsewhere; this pins the
@@ -44,6 +56,32 @@ class CanonicalWorkUnitScopeTest : DescribeSpec({
             currentCanonicalContext() shouldBe outer.context
             outer.context.snapshot().containsKey(CanonicalFields.PARENT_WORK_UNIT_ID) shouldBe false
             outer.unbind()
+        }
+    }
+
+    describe("seed at open") {
+        it("runs seed once at open, after the threadlocal bind, and its fields land on the line") {
+            val scope = openCanonicalWorkUnit(seedingScopeAdapter, "wu")
+            // Seed already ran during open, before the block/enrich — the field is present now.
+            scope.context.snapshot()["seeded_field"] shouldBe "from_seed"
+            // Seed saw the context bound (work_unit_id in MDC / threadlocal), per the doc'd choice.
+            scope.context.snapshot()["bound_id_at_seed"] shouldBe "wu"
+            scope.context.snapshot().containsKey(CanonicalFields.SEED_ERROR) shouldBe false
+            scope.unbind()
+        }
+
+        it("swallows a throwing seed, recording it on the line; the scope still finalizes") {
+            val throwingSeedAdapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    throw IllegalStateException("seed boom")
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {}
+            }
+            val scope = openCanonicalWorkUnit(throwingSeedAdapter, "wu")
+            scope.context.snapshot()[CanonicalFields.SEED_ERROR] shouldBe true
+            scope.context.snapshot()[CanonicalFields.SEED_ERROR_CLASS] shouldBe "java.lang.IllegalStateException"
+            scope.unbind()
         }
     }
 

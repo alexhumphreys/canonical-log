@@ -10,6 +10,7 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 
 private val nullAdapter = object : WorkUnitAdapter<String> {
@@ -479,6 +481,143 @@ class WithCanonicalLogTest : DescribeSpec({
             ex shouldBe blockEx
             snap["canonical_log_enrich_error"] shouldBe true
             snap["canonical_log_enrich_error_class"] shouldBe "java.lang.IllegalStateException"
+        }
+    }
+
+    describe("seed (ambient capture at open)") {
+        it("blocking: seed-written fields appear in the emitted snapshot") {
+            val adapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    ctx.put("seeded_field", "from_seed")
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {}
+            }
+            var snap: Map<String, Any> = emptyMap()
+            withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) { "ok" }
+
+            snap["seeded_field"] shouldBe "from_seed"
+            snap.containsKey("canonical_log_seed_error") shouldBe false
+        }
+
+        it("suspend: seed-written fields appear in the emitted snapshot") {
+            val adapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    ctx.put("seeded_field", "from_seed")
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {}
+            }
+            var snap: Map<String, Any> = emptyMap()
+            runBlocking {
+                withCanonicalLog(adapter, "wu", { snap = it.snapshot() }) { "ok" }
+            }
+
+            snap["seeded_field"] shouldBe "from_seed"
+            snap.containsKey("canonical_log_seed_error") shouldBe false
+        }
+
+        it("suspend: seed runs on the caller's thread, capturing ambient MDC absent on the dispatcher thread") {
+            // The reason this feature exists: capture caller-thread ambient state (here an MDC
+            // entry) at open, before the block switches dispatchers and that state is gone.
+            val callerThreadId = AtomicLong()
+            val seedThreadId = AtomicLong()
+            val blockThreadId = AtomicLong()
+            val ambientOnIoThread = java.util.concurrent.atomic.AtomicReference<String?>("unset")
+
+            val adapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    seedThreadId.set(Thread.currentThread().id)
+                    ctx.put("ambient_trace_id", MDC.get("test_trace_id"))
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {}
+            }
+
+            var snap: Map<String, Any> = emptyMap()
+            runBlocking {
+                callerThreadId.set(Thread.currentThread().id)
+                MDC.put("test_trace_id", "trace-123")
+                try {
+                    withCanonicalLog(adapter, "wu", { snap = it.snapshot() }) {
+                        withContext(Dispatchers.IO) {
+                            blockThreadId.set(Thread.currentThread().id)
+                            // Ambient MDC does not follow onto the IO dispatcher thread —
+                            // this is exactly why seed cannot wait until enrich.
+                            ambientOnIoThread.set(MDC.get("test_trace_id"))
+                            CanonicalLog.put("ran_on_io", true)
+                        }
+                    }
+                } finally {
+                    MDC.remove("test_trace_id")
+                }
+            }
+
+            // The block genuinely ran on a different (IO) thread...
+            blockThreadId.get() shouldNotBe callerThreadId.get()
+            // ...where the ambient MDC was already gone...
+            ambientOnIoThread.get() shouldBe null
+            // ...yet seed ran on the caller's thread and captured it.
+            seedThreadId.get() shouldBe callerThreadId.get()
+            snap["ambient_trace_id"] shouldBe "trace-123"
+            snap["ran_on_io"] shouldBe true
+        }
+
+        it("precedence: handler put overwrites seed; enrich overwrites both") {
+            val adapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    ctx.put("precedence_key", "seed")
+                    ctx.put("handler_wins_key", "seed")
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
+                    ctx.put("precedence_key", "enrich")
+                }
+            }
+            var snap: Map<String, Any> = emptyMap()
+            withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) {
+                CanonicalLog.put("precedence_key", "handler")
+                CanonicalLog.put("handler_wins_key", "handler")
+                "ok"
+            }
+
+            // seed -> handler -> enrich, enrich authoritative.
+            snap["precedence_key"] shouldBe "enrich"
+            // where enrich stays out, the handler still beats seed.
+            snap["handler_wins_key"] shouldBe "handler"
+        }
+
+        it("a throwing seed is swallowed: block runs, result unaffected, line marked, one WARN") {
+            val appender = attachLibraryWarnAppender()
+            try {
+                val adapter = object : WorkUnitAdapter<String> {
+                    override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                    override fun seed(ctx: CanonicalLogContext, input: String) {
+                        throw IllegalStateException("seed blew up")
+                    }
+                    override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {}
+                }
+                var snap: Map<String, Any> = emptyMap()
+                var blockRan = false
+
+                val result = withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) {
+                    blockRan = true
+                    it.put("from_block", "yes")
+                    "ok"
+                }
+
+                result shouldBe "ok"
+                blockRan shouldBe true
+                snap["from_block"] shouldBe "yes"
+                snap["canonical_log_seed_error"] shouldBe true
+                snap["canonical_log_seed_error_class"] shouldBe "java.lang.IllegalStateException"
+                threadLocalContext.get() shouldBe null
+                val warn = appender.list.single { it.level == Level.WARN }
+                warn.formattedMessage shouldContain "wu"
+                warn.throwableProxy?.message shouldBe "seed blew up"
+            } finally {
+                detachLibraryWarnAppender(appender)
+            }
         }
     }
 })
