@@ -4,7 +4,9 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger as LogbackLogger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import io.github.alexhumphreys.canonicallog.CanonicalLineWriter
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
+import io.github.alexhumphreys.canonicallog.CanonicalLogSampler
 import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnit
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter

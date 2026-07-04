@@ -25,6 +25,10 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * result / rethrows the block's exception as normal. The canonical line is lost;
  * the WARN is the only record. [Error]s still propagate — see the
  * catch-`Exception`-not-`Error` rationale in [withCanonicalLogBlocking].
+ *
+ * Relationship to [CanonicalLineWriter]: [EmitFn] is the raw lambda primitive the lifecycle
+ * takes; [CanonicalLineWriter] is the named injectable seam integrations register/provide.
+ * Entry points bridge them with `scope.emit(writer::write)`. Neither is deprecated.
  */
 public typealias EmitFn = (CanonicalLogContext) -> Unit
 
