@@ -75,6 +75,7 @@ Three real example lines from the [sample app](samples/spring-demo/), one per ou
 {
   "@timestamp": "2026-05-03T08:06:19.437881Z",
   "logger_name": "canonical",
+  "message": "GET /posts/{id} 200 153ms",
   "service_name": "canonical-log-spring-demo",
   "environment": "local",
 
@@ -110,6 +111,7 @@ The handler called `CanonicalLog.markFailed("post_not_found", "post_id" to id)` 
 {
   "@timestamp": "2026-05-03T08:06:19.460885Z",
   "logger_name": "canonical",
+  "message": "GET /posts/{id} 404 3ms error=post_not_found",
 
   "http_request_method": "GET",
   "url_path": "/posts/999",
@@ -137,6 +139,7 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 {
   "@timestamp": "2026-05-03T08:06:19.490255Z",
   "logger_name": "canonical",
+  "message": "GET /posts/{id}/explode 500 2ms error=exception",
 
   "http_request_method": "GET",
   "url_path": "/posts/1/explode",
@@ -172,6 +175,8 @@ Every field name the library writes is published as a `const` on `CanonicalField
 ### Querying tip
 
 `error=true` is set by both the marked-failure path and the thrown-failure path. To distinguish them: a thrown failure has `error_class`, a marked failure has only `error_reason`. Convention for query authors: `error="true"` matches both, `error="true" AND _exists_:error_class` filters to thrown, `error="true" AND NOT _exists_:error_class` filters to handler-flagged business failures. The "absent means false" rule applies — `error` is omitted on success rather than emitted as `false`.
+
+The `message` field (e.g. `GET /posts/{id} 200 153ms`) is a human-readable summary for skimming a plain console — every value in it is also present as a structured field. Query the structured fields, never parse `message`.
 
 ### Correlating with debug logs
 

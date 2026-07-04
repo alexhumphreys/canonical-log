@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldMatch
 import jakarta.servlet.FilterChain
 import net.logstash.logback.marker.MapEntriesAppendingMarker
 import org.slf4j.LoggerFactory
@@ -87,6 +88,21 @@ class CanonicalLogFilterTest : DescribeSpec({
                 val snap = lastCanonicalSnapshot(appender)
                 snap["url_path"] shouldBe "/sync"
                 snap["http_response_status_code"] shouldBe 200
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("emits a human-readable message summarizing the request") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/sync")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                CanonicalLogFilter().doFilter(req, res) { _, _ -> }
+                val event = appender.list.last { it.loggerName == "canonical" }
+                // No route matched (MockHttpServletRequest sets no best-matching-pattern
+                // attribute), so the message falls back to url_path.
+                event.formattedMessage shouldMatch Regex("""GET /sync 200 \d+ms""")
             } finally {
                 detachAppender(appender)
             }

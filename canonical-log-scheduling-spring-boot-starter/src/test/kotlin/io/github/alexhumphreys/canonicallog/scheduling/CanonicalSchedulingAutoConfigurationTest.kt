@@ -9,6 +9,7 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotBeEmpty
+import io.kotest.matchers.string.shouldStartWith
 import net.logstash.logback.marker.MapEntriesAppendingMarker
 import org.slf4j.LoggerFactory
 import org.slf4j.Marker
@@ -58,6 +59,13 @@ class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
             // The body's CanonicalLog.put landed — the work unit was bound during the method.
             snap["tick_field"] shouldBe "on"
             snap.containsKey("error") shouldBe false
+        }
+
+        it("emits a human-readable message for the non-HTTP work unit") {
+            awaitScheduledLine(appender) ?: error("no scheduled-job canonical line was emitted")
+            val event = appender.list.last { it.loggerName == "canonical" }
+            // Non-HTTP shape: "<work_unit_kind> <work_unit_id>".
+            event.formattedMessage shouldStartWith "scheduled_job "
         }
     }
 })

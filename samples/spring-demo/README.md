@@ -21,7 +21,7 @@ In the app's stdout you'll see one canonical log line per request, looking like:
 ```json
 {
   "logger_name": "canonical",
-  "message": "canonical",
+  "message": "GET /posts/{id} 200 21ms",
   "http_request_method": "GET",
   "url_path": "/posts/1",
   "http_route": "/posts/{id}",

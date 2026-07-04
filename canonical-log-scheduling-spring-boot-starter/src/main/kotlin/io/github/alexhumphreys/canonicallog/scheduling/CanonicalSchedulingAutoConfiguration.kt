@@ -2,6 +2,7 @@ package io.github.alexhumphreys.canonicallog.scheduling
 
 import io.github.alexhumphreys.canonicallog.EmitFn
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
+import io.github.alexhumphreys.canonicallog.canonicalLineMessage
 import io.micrometer.observation.ObservationRegistry
 import net.logstash.logback.argument.StructuredArguments
 import org.slf4j.LoggerFactory
@@ -69,6 +70,9 @@ public open class CanonicalSchedulingAutoConfiguration {
      */
     private fun canonicalEmit(): EmitFn {
         val logger = LoggerFactory.getLogger("canonical")
-        return { ctx -> logger.info("canonical", StructuredArguments.entries(ctx.snapshot())) }
+        return { ctx ->
+            val snapshot = ctx.snapshot()
+            logger.info(canonicalLineMessage(snapshot), StructuredArguments.entries(snapshot))
+        }
     }
 }
