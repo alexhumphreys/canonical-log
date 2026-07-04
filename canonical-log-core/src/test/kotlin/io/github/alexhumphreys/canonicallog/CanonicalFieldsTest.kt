@@ -35,6 +35,8 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.TYPE_CONFLICT_TYPE shouldBe "canonical_log_type_conflict_type"
             CanonicalFields.ENRICH_ERROR shouldBe "canonical_log_enrich_error"
             CanonicalFields.ENRICH_ERROR_CLASS shouldBe "canonical_log_enrich_error_class"
+            CanonicalFields.SEED_ERROR shouldBe "canonical_log_seed_error"
+            CanonicalFields.SEED_ERROR_CLASS shouldBe "canonical_log_seed_error_class"
 
             CanonicalFields.HTTP_REQUEST_METHOD shouldBe "http_request_method"
             CanonicalFields.URL_PATH shouldBe "url_path"
@@ -110,6 +112,8 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.TYPE_CONFLICT_TYPE,
     CanonicalFields.ENRICH_ERROR,
     CanonicalFields.ENRICH_ERROR_CLASS,
+    CanonicalFields.SEED_ERROR,
+    CanonicalFields.SEED_ERROR_CLASS,
     CanonicalFields.HTTP_REQUEST_METHOD,
     CanonicalFields.URL_PATH,
     CanonicalFields.HTTP_ROUTE,

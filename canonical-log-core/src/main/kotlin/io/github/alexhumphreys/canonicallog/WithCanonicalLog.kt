@@ -175,6 +175,10 @@ public suspend fun <T, R> withCanonicalLog(
     threadLocalContext.get()?.let { parent ->
         recordNesting(ctx, parent)
     }
+    // Seed synchronously on the caller's thread, BEFORE withContext: the ambient state we
+    // want to capture (MDC entries, the current span) lives here, and would be gone once the
+    // block switches dispatchers. Seed values are defaults the handler/enrich can overwrite.
+    runSeed(adapter, ctx, input)
     val startNs = System.nanoTime()
     return withContext(CanonicalLogElement(ctx)) {
         // See [withCanonicalLogBlocking] for the rationale: Errors propagate; only
@@ -296,6 +300,12 @@ public fun <T> openCanonicalWorkUnit(adapter: WorkUnitAdapter<T>, input: T): Can
     }
     threadLocalContext.set(ctx)
     val previousMdc = CanonicalLogMdc.install(ctx)
+    // Seed ambient state now, on the opening thread — after the threadlocal bind and MDC
+    // mirror so a seed that logs (or reads the ambient context) sees `work_unit_id`, and
+    // before the work runs so seed values are defaults the handler/enrich can overwrite.
+    // This covers every blocking entry point (withCanonicalLogBlocking, the servlet filter,
+    // the scheduling observation handler) with zero changes to them.
+    runSeed(adapter, ctx, input)
     return CanonicalWorkUnitScope(ctx, previous, previousMdc, System.nanoTime())
 }
 
@@ -328,6 +338,24 @@ private fun classifyOutcome(error: Throwable?, durationMs: Long): Outcome = when
 /** Map the block's [Result] to an [Outcome]; the suspend path's [Result]-shaped entry to [classifyOutcome]. */
 private fun outcomeOf(blockResult: Result<*>, startNs: Long): Outcome =
     classifyOutcome(blockResult.exceptionOrNull(), elapsedMs(startNs))
+
+private fun <T> runSeed(
+    adapter: WorkUnitAdapter<T>,
+    ctx: CanonicalLogContext,
+    input: T,
+) {
+    try {
+        adapter.seed(ctx, input)
+    } catch (seedEx: Exception) {
+        ctx.put(CanonicalFields.SEED_ERROR, true)
+        ctx.put(CanonicalFields.SEED_ERROR_CLASS, seedEx::class.qualifiedName ?: "unknown")
+        libraryLogger.warn(
+            "adapter.seed threw for work unit {}; failure recorded on the canonical line, block result unaffected",
+            ctx.workUnit.id,
+            seedEx,
+        )
+    }
+}
 
 private fun <T> runEnrich(
     adapter: WorkUnitAdapter<T>,

@@ -32,9 +32,14 @@ class JavaErgonomicsTest {
     };
 
     private static Map<String, Object> capture(Consumer<CanonicalLogContext> body) {
+        return capture(ADAPTER, body);
+    }
+
+    private static Map<String, Object> capture(
+            WorkUnitAdapter<String> adapter, Consumer<CanonicalLogContext> body) {
         AtomicReference<Map<String, Object>> line = new AtomicReference<>();
         WithCanonicalLogKt.withCanonicalLogBlocking(
-                ADAPTER,
+                adapter,
                 "input",
                 ctx -> {
                     line.set(ctx.snapshot());
@@ -46,6 +51,42 @@ class JavaErgonomicsTest {
                 });
         return line.get();
     }
+
+    /**
+     * A Java adapter that overrides only {@code describe} and {@code enrich} — {@code seed}
+     * is the SPI's default method. That this compiles at all is the point: the Kotlin
+     * interface default method must be a real JVM default method for Java implementers, so
+     * existing Java adapters keep compiling after {@code seed} was added.
+     */
+    private static final WorkUnitAdapter<String> NO_SEED_ADAPTER = new WorkUnitAdapter<>() {
+        @Override
+        public WorkUnit describe(String input) {
+            return new WorkUnit("java-no-seed", "test", Instant.now());
+        }
+
+        @Override
+        public void enrich(CanonicalLogContext ctx, String input, Outcome outcome) {
+            ctx.put("enriched", true);
+        }
+    };
+
+    /** A Java adapter that DOES override {@code seed}, to prove the override path is callable from Java. */
+    private static final WorkUnitAdapter<String> SEEDING_ADAPTER = new WorkUnitAdapter<>() {
+        @Override
+        public WorkUnit describe(String input) {
+            return new WorkUnit("java-seed", "test", Instant.now());
+        }
+
+        @Override
+        public void seed(CanonicalLogContext ctx, String input) {
+            ctx.put("seeded_field", "from_seed");
+        }
+
+        @Override
+        public void enrich(CanonicalLogContext ctx, String input, Outcome outcome) {
+            ctx.put("enriched", true);
+        }
+    };
 
     @Test
     void ambientApiIsCallableAsPlainStatics() {
@@ -88,5 +129,24 @@ class JavaErgonomicsTest {
         assertEquals("eu-1", line.get("replica"));
         assertEquals("served_from_cache", line.get("degraded_reason"));
         assertEquals(true, line.get("cache_hit"));
+    }
+
+    @Test
+    void javaAdapterCompilesWithoutOverridingSeedAndRunsNormally() {
+        Map<String, Object> line = capture(NO_SEED_ADAPTER, ctx -> CanonicalLog.put("post_id", 7L));
+
+        assertEquals(7L, line.get("post_id"));
+        assertEquals(true, line.get("enriched"));
+        // The default seed is a no-op, so it never records a seed error.
+        assertNull(line.get("canonical_log_seed_error"));
+    }
+
+    @Test
+    void javaAdapterCanOverrideSeed() {
+        Map<String, Object> line = capture(SEEDING_ADAPTER, ctx -> {});
+
+        assertEquals("from_seed", line.get("seeded_field"));
+        assertEquals(true, line.get("enriched"));
+        assertNull(line.get("canonical_log_seed_error"));
     }
 }

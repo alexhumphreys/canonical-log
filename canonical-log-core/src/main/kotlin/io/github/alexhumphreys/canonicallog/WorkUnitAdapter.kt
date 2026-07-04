@@ -9,13 +9,13 @@ package io.github.alexhumphreys.canonicallog
  * topic/partition, and so on. Per-operation values (`post_id`, `comment_count`) are
  * the handler's job, not the adapter's.
  *
- * **Adapters must not throw.** Both [describe] and [enrich] are called by
+ * **Adapters must not throw.** [describe], [seed], and [enrich] are all called by
  * `withCanonicalLog{,Blocking}` as part of the work-unit lifecycle, and a throwing
- * adapter is a bug. The library is defensive against it (a throwing [enrich] records
- * `canonical_log_enrich_error` on the canonical line and logs a WARN; the block's
- * result is never replaced), but treat that as a backstop, not a contract — adapter
- * implementations should read inputs that are guaranteed-valid by their caller and
- * write fields that are guaranteed-formattable.
+ * adapter is a bug. The library is defensive against it (a throwing [seed] or [enrich]
+ * records `canonical_log_seed_error` / `canonical_log_enrich_error` on the canonical line
+ * and logs a WARN; the block's result is never replaced), but treat that as a backstop,
+ * not a contract — adapter implementations should read inputs that are guaranteed-valid by
+ * their caller and write fields that are guaranteed-formattable.
  */
 public interface WorkUnitAdapter<T> {
     /**
@@ -25,13 +25,54 @@ public interface WorkUnitAdapter<T> {
     public fun describe(input: T): WorkUnit
 
     /**
+     * Write fields that must be captured at work-unit *open*, on the *opening thread* —
+     * ambient, request-scoped state (MDC entries such as a `trace_id`/`request_id`, the
+     * current tracing span id, tenant baggage) that may be gone by [enrich] time. [enrich]
+     * runs at the *end* of the lifecycle, possibly on a different thread (a servlet
+     * `AsyncListener`, a scheduling observation's `onStop`), where the opening thread's
+     * ambient context no longer exists; [seed] is the hook that runs early enough to read it.
+     *
+     * Called exactly once, after the context is created and nesting recorded and the
+     * threadlocal is bound (so a seed that itself logs sees `work_unit_id` in MDC), before
+     * the work runs. On the suspend path it runs synchronously on the caller's thread — where
+     * the ambient state lives — even when the block immediately switches dispatchers. Default:
+     * no-op, so every existing adapter stays source- and binary-compatible.
+     *
+     * **Precedence — seed values are defaults, not authority.** [seed] runs *first*, so both
+     * the handler block and [enrich] overwrite it for the same key (ordering is
+     * seed → handler → enrich, with [enrich] authoritative). Use it to capture ambient state,
+     * not to establish identity — identity belongs in [describe].
+     *
+     * **This is mechanism, not policy.** The library provides *when* ambient capture runs;
+     * *what* gets captured stays adopter code (no tracing-vendor dependency in core). Compose,
+     * don't subclass, the reference adapters:
+     * ```
+     * class TracingHttpAdapter(
+     *     private val delegate: WorkUnitAdapter<HttpExchange> = HttpWorkUnitAdapter(),
+     * ) : WorkUnitAdapter<HttpExchange> by delegate {
+     *     override fun seed(ctx: CanonicalLogContext, input: HttpExchange) {
+     *         delegate.seed(ctx, input)
+     *         ctx.put("trace_id", MDC.get("trace_id"))   // ambient — only valid at open time
+     *     }
+     * }
+     * ```
+     *
+     * **Must not throw** (see the class KDoc). As a backstop a throwing [seed] is swallowed,
+     * one WARN is logged, and the failure is recorded on the line via
+     * [CanonicalFields.SEED_ERROR] / [CanonicalFields.SEED_ERROR_CLASS] — the block still runs
+     * and its result is unaffected. Default: no-op.
+     */
+    public fun seed(ctx: CanonicalLogContext, input: T) {}
+
+    /**
      * Write the adapter's mechanically-uniform fields onto the [ctx]. Called once at
      * the end of the lifecycle, after the body has run. Has access to the original
      * [input] and the [outcome] (lifecycle-level success or thrown exception).
      *
-     * **Precedence — the adapter wins for the same key.** Because `enrich` runs *after*
-     * the handler block, an unconditional `ctx.put` here overwrites any value the handler
-     * set under the same key. That is intentional for the mechanically-uniform fields
+     * **Precedence — the adapter wins for the same key.** The write order for a given key is
+     * [seed] (at open) → handler block → `enrich`, with `enrich` authoritative: because it runs
+     * *after* the handler block, an unconditional `ctx.put` here overwrites any value the handler
+     * or [seed] set under the same key. That is intentional for the mechanically-uniform fields
      * (status, durations, [WorkUnit] identity): the adapter is authoritative. The
      * deliberate exceptions are the two "intent" fields — [CanonicalFields.ERROR_REASON]
      * and [CanonicalFields.CANCEL_REASON] — where a handler-set value expresses intent the
