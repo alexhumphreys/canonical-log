@@ -223,6 +223,18 @@ For an entry point Spring doesn't instrument for you, open the unit explicitly w
 
 The sample demonstrates the scheduled path with [`ReportingJob`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ReportingJob.kt); it's off by default (so it doesn't add background noise), enable with `--canonical-log.sample.scheduled-job.enabled=true`. Pinned by `ReportingJobEndToEndTest`.
 
+## Sinks (writers)
+
+The canonical line is emitted through a `CanonicalLineWriter`. Which one you want depends on how your logging backend renders structured fields — provide a bean/instance to override the default:
+
+| Your layout | Writer | Where | Fields |
+| --- | --- | --- | --- |
+| logstash-logback-encoder configured | `LogstashCanonicalLineWriter` (default) | `canonical-log-logstash` | typed, via `StructuredArguments` |
+| JSON layout that flattens MDC but not `StructuredArguments` (e.g. Dropwizard `EventJsonLayout`) | `MdcCanonicalLineWriter` | `canonical-log-core` | stringified (MDC is `String`-valued) |
+| dedicated raw (`%msg%n`) appender / anything else | `JsonCanonicalLineWriter` | `canonical-log-core` | typed, message **is** a hand-rolled JSON object |
+
+`JsonCanonicalLineWriter` is dependency-free (no encoder needed): the log event's message is the complete, typed JSON object, keys sorted, with the human summary folded in under `message`. Its `canonicalLineJson(fields)` serializer is public for custom sinks, and an `emitLine` lambda lets you send the string to a file/stdout/socket instead of slf4j. Never wire more than one writer for the same line.
+
 ## Sample
 
 See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end on `localhost:8080` with H2 + an in-process MockWebServer for outbound calls.
