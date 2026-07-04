@@ -42,3 +42,45 @@ jobs:
             **/build/test-results/
           retention-days: 14
           if-no-files-found: ignore
+
+  test-jdk17:
+    name: Library tests on JDK 17 launcher
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install both JDKs: compile on 25 (JAVA_HOME, listed last), run the library test
+      # suites on a real 17 JVM via the -Ptest.jdk=17 launcher override. This proves the
+      # 17-target jars load and run on 17, not just that they carry a 17 class-file version.
+      # (todo 025)
+      - name: Set up JDK 17 and 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+      - name: Test library modules on JDK 17
+        run: >-
+          ./gradlew test -Ptest.jdk=17
+          -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64
+          --stacktrace
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-jdk17
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
