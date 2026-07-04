@@ -1,18 +1,17 @@
-package io.github.alexhumphreys.canonicallog.spring
+package io.github.alexhumphreys.canonicallog.servlet
 
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
 import io.github.alexhumphreys.canonicallog.Outcome
+import io.github.alexhumphreys.canonicallog.WorkUnit
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
-import org.springframework.mock.web.MockHttpServletRequest
-import org.springframework.mock.web.MockHttpServletResponse
-import org.springframework.web.servlet.HandlerMapping
+import java.time.Instant
 import java.util.concurrent.CancellationException
 
 @OptIn(DelicateCanonicalLogApi::class)
 private fun ctx(): CanonicalLogContext = CanonicalLogContext(
-    io.github.alexhumphreys.canonicallog.WorkUnit("wu-1", "http", java.time.Instant.now()),
+    WorkUnit("wu-1", "http", Instant.now()),
 )
 
 private fun exchange(
@@ -22,15 +21,18 @@ private fun exchange(
     requestId: String? = null,
     matchedRoute: String? = null,
 ): HttpExchange {
-    val req = MockHttpServletRequest(method, uri)
-    if (requestId != null) req.addHeader("X-Request-Id", requestId)
-    if (matchedRoute != null) req.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, matchedRoute)
-    val res = MockHttpServletResponse()
-    res.status = status
-    return HttpExchange(req, res)
+    val fake = FakeRequest(
+        method = method,
+        uri = uri,
+        headers = requestId?.let { mapOf("X-Request-Id" to it) } ?: emptyMap(),
+        responseStatus = status,
+    )
+    // Route templates flow through the framework-neutral ROUTE_ATTRIBUTE — the default
+    // resolver the adapter uses when no framework-specific resolver is supplied.
+    if (matchedRoute != null) fake.request.setAttribute(HttpWorkUnitAdapter.ROUTE_ATTRIBUTE, matchedRoute)
+    return HttpExchange(fake.request, fake.response)
 }
 
-@OptIn(DelicateCanonicalLogApi::class)
 class HttpWorkUnitAdapterTest : DescribeSpec({
 
     val adapter = HttpWorkUnitAdapter()
@@ -62,6 +64,12 @@ class HttpWorkUnitAdapterTest : DescribeSpec({
             s["http_request_duration_ms"] shouldBe 12L
             s["work_unit_kind"] shouldBe "http"
             s.containsKey("error") shouldBe false
+        }
+
+        it("resolves http_route via ROUTE_ATTRIBUTE when set") {
+            val c = ctx()
+            adapter.enrich(c, exchange(uri = "/posts/7", matchedRoute = "/posts/{id}"), Outcome.Completed(1L))
+            c.snapshot()["http_route"] shouldBe "/posts/{id}"
         }
 
         it("omits http_route when no template was matched (e.g. 404 before routing)") {

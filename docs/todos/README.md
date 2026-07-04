@@ -17,14 +17,17 @@ the file says to update). If implementation diverges from the file's design, rec
 The framework-portability track (make the library adoptable beyond Spring Boot, no behaviour
 changes to existing adopters):
 
-1. [021](021-canonical-log-servlet.md) — framework-neutral servlet module
-2. [022](022-canonical-log-dropwizard.md) — Dropwizard bundle + Jersey route capture
+1. [022](022-canonical-log-dropwizard.md) — Dropwizard bundle + Jersey route capture
 
 (020 — seam types to core, `canonical-log-logstash` split, MDC writer — landed 2026-07-04,
 superseding 017 and delivering 019. 025 — Java 17 bytecode floor for library modules
 (`-Xjdk-release=17`/`options.release(17)`, toolchain stays 25) — landed 2026-07-04; Spring
 Boot 4's 17 baseline meant no starter exception was needed, so the new servlet/Dropwizard
-modules are born on 17.)
+modules are born on 17. 021 — `canonical-log-servlet`, the framework-neutral servlet module —
+landed 2026-07-04: `runCanonicalHttpRequest` is now the single copy of the async-aware HTTP
+lifecycle both filters call, `HttpExchange`/`HttpWorkUnitAdapter` moved there (with route
+lookup as a `routeResolver` ctor param + `ROUTE_ATTRIBUTE`), plus `CanonicalLogServletFilter`
+and `PathExclusions`; deprecated typealiases remain in `...canonicallog.spring`. Unblocks 022.)
 
 [023](023-adapter-seed-hook.md) and [024](024-graduate-open-close-and-consumer-recipe.md)
 are independent and can be slotted anywhere.
@@ -46,7 +49,6 @@ materializes.
 | [015](015-time-section-helper.md) | `CanonicalLog.time { }` | Section timing helper (`_ms_total` + `_count`) |
 | [016](016-webflux-support.md) | WebFlux support | Reactive `WebFilter`; core bridge already coroutine-ready |
 | [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
-| [021](021-canonical-log-servlet.md) | `canonical-log-servlet` | Extract the async-aware HTTP lifecycle + `HttpWorkUnitAdapter` into a Spring-free servlet module |
 | [022](022-canonical-log-dropwizard.md) | `canonical-log-dropwizard` | `ConfiguredBundle` wiring servlet filter + Jersey route-template capture + MDC writer default |
 | [023](023-adapter-seed-hook.md) | `WorkUnitAdapter.seed` | Capture ambient context (trace ids, MDC) at open time on the opening thread |
 | [024](024-graduate-open-close-and-consumer-recipe.md) | Open/close graduation + consumer recipe | Stabilize `openCanonicalWorkUnit`/`CanonicalWorkUnitScope`; broker-agnostic message-consumer recipe with pinned examples |
@@ -57,9 +59,10 @@ materializes.
 | [030](030-canonical-log-sqs.md) | `canonical-log-sqs` | `SqsMessageWorkUnitAdapter` for poll-loop consumers (adapter only; loop stays recipe) |
 | [031](031-canonical-log-jobrunr.md) | `canonical-log-jobrunr` | `JobServerFilter`-based transparent work units per job processing attempt |
 
-Dependencies: 021 → 022 (in that order); 023 and 024 are independent (023 and 018 touch the
+Dependencies: 022 depends on 021 (landed); 023 and 024 are independent (023 and 018 touch the
 same core files — either order, second one rebases). 016's shared-writer dependency (020) has
-landed. 014 is best done after 021 (the adapter it hardens moves to `canonical-log-servlet`).
+landed. 014 (X-Request-Id hardening) now targets `canonical-log-servlet`'s `HttpWorkUnitAdapter`,
+where the adapter moved.
 026 depends on 024 (it updates the recipe and its pinned test); 027 hard-depends on
 023 (it is the seed hook's first shipped use); 029 builds on 024's graduated open/close
 primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe pointer);
