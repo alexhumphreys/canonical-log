@@ -1,31 +1,30 @@
 package io.github.alexhumphreys.canonicallog.spring
 
-import io.github.alexhumphreys.canonicallog.CanonicalFields
 import io.github.alexhumphreys.canonicallog.CanonicalLineWriter
-import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.CanonicalLogSampler
 import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
-import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import io.github.alexhumphreys.canonicallog.logstash.LogstashCanonicalLineWriter
-import io.github.alexhumphreys.canonicallog.openCanonicalWorkUnit
-import jakarta.servlet.AsyncEvent
-import jakarta.servlet.AsyncListener
+import io.github.alexhumphreys.canonicallog.servlet.HttpExchange
+import io.github.alexhumphreys.canonicallog.servlet.HttpWorkUnitAdapter
+import io.github.alexhumphreys.canonicallog.servlet.runCanonicalHttpRequest
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.slf4j.LoggerFactory
 import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
-import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicBoolean
+import org.springframework.web.servlet.HandlerMapping
 
 /**
- * Same logger name core uses for its own failure reporting (throwing emit/enrich),
- * so adopters configure one logger for all canonical-log library warnings.
+ * Route resolver for the Spring MVC world: prefer Spring's own matched-pattern attribute,
+ * falling back to the framework-neutral [HttpWorkUnitAdapter.ROUTE_ATTRIBUTE] so glue that
+ * publishes routes the servlet-generic way still works under Spring.
  */
-private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
+internal val springRouteResolver: (HttpServletRequest) -> String? = {
+    (it.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String)
+        ?: it.getAttribute(HttpWorkUnitAdapter.ROUTE_ATTRIBUTE) as? String
+}
 
 /**
  * Servlet filter that opens a canonical work unit for each HTTP request and emits
@@ -33,25 +32,18 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * asynchronous handlers (suspend controllers, `Callable`/`DeferredResult` returns,
  * SSE streams).
  *
- * Lifecycle:
- *  1. On request entry: create [CanonicalLogContext], install it as the
- *     current-thread canonical context (so blocking-thread contributors see it
- *     without any explicit setup), and mirror the work unit id into slf4j MDC
- *     under `work_unit_id` — every ordinary log line the handler writes on this
- *     thread correlates with the canonical line. Opt out process-wide with
- *     `canonical-log.http.mdc-enabled=false` (see [CanonicalLogMdc]).
- *  2. Invoke `chain.doFilter`. If the handler is synchronous, control returns here
- *     after the response is fully rendered; the filter enriches and emits inline.
- *  3. If `chain.doFilter` returned but `request.isAsyncStarted` is `true`, the
- *     handler is still running asynchronously. The filter registers an
- *     [AsyncListener] that fires on completion / error / timeout, defers
- *     enrichment + emit until then.
- *  4. The thread-local binding is unwound on this thread before this filter
- *     returns. Coroutine-aware adopters should use `withCanonicalCoroutineContext`
- *     to lift the context into the coroutine before any dispatcher switch.
- *
- * Single-emit invariant: an [AtomicBoolean] guard ensures at most one canonical
- * line per request, even if both `onError` and `onComplete` fire on the listener.
+ * This is the Spring-flavoured caller of the shared, framework-neutral HTTP lifecycle in
+ * `canonical-log-servlet` — the whole `doFilterInternal` body is one call to
+ * [runCanonicalHttpRequest], which owns the open → chain → sync/async emit split → unbind
+ * sequence and the telemetry-never-fails-the-request policy (see it for details). What stays
+ * Spring-specific here:
+ *  - [OncePerRequestFilter] registration semantics (its once-per-request guard, its
+ *    `shouldNotFilter` hook) — part of this filter's contract.
+ *  - [AntPathMatcher] exclude-paths, for back-compat with existing `canonical-log.http
+ *    .exclude-paths` values (the servlet module's [io.github.alexhumphreys.canonicallog
+ *    .servlet.PathExclusions] is deliberately simpler and not ant-style).
+ *  - the default adapter's route resolution via [springRouteResolver] (Spring's
+ *    `BEST_MATCHING_PATTERN_ATTRIBUTE`).
  *
  * Both collaborators are injectable (the auto-configuration resolves user beans):
  *  - [adapter] describes/enriches the work unit. To add uniform fields (e.g. a tenant
@@ -65,21 +57,12 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  *  - [excludePaths] (ant-style patterns matched against `request.requestURI`, the
  *    same value `url_path` reports) skips the work unit entirely — no context, no
  *    line. Use for health probes and other traffic that should cost nothing.
- *  - [sampler] is consulted after [WorkUnitAdapter.enrich], so it sees the complete
- *    line (status, duration, error fields) and can implement "always keep errors,
- *    sample healthy 200s" — see [CanonicalLogSampler]. Defaults to emit-all.
- *
- * Telemetry must never fail the request it observes: exceptions from the adapter's
- * `enrich`, the [sampler], and the [writer] are caught, WARN-logged to the
- * `io.github.alexhumphreys.canonicallog` logger, and never propagate to the caller.
- * A throwing enrich is additionally recorded on the line via the
- * `canonical_log_enrich_error*` fields (matching core); a throwing sampler fails
- * open (the line is still written — a broken sampler shouldn't silently kill
- * observability); a throwing writer drops the line, the WARN being the only record.
+ *  - [sampler] is consulted after enrichment, so it sees the complete line (status,
+ *    duration, error fields) and can implement "always keep errors, sample healthy
+ *    200s" — see [CanonicalLogSampler]. Defaults to emit-all.
  */
-@OptIn(DelicateCanonicalLogApi::class)
 public class CanonicalLogFilter(
-    private val adapter: WorkUnitAdapter<HttpExchange> = HttpWorkUnitAdapter(),
+    private val adapter: WorkUnitAdapter<HttpExchange> = HttpWorkUnitAdapter(springRouteResolver),
     private val writer: CanonicalLineWriter = LogstashCanonicalLineWriter(),
     private val excludePaths: List<String> = emptyList(),
     private val sampler: CanonicalLogSampler = CanonicalLogSampler { true },
@@ -90,113 +73,14 @@ public class CanonicalLogFilter(
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         excludePaths.any { pathMatcher.match(it, request.requestURI) }
 
+    @OptIn(DelicateCanonicalLogApi::class)
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        val exchange = HttpExchange(request, response)
-        // Open the blocking work-unit scope (bind threadlocal + MDC, record nesting). The
-        // filter drives the tail itself instead of the withCanonicalLogBlocking closure,
-        // because on the async path emit happens later from an AsyncListener — so it must
-        // unbind on this thread (finally) independently of when enrich/emit run.
-        val scope = openCanonicalWorkUnit(adapter, exchange)
-        val ctx = scope.context
-
-        fun emit(error: Throwable?) {
-            // Cancellation (client disconnect, async timeout) is not a failure — the scope
-            // maps it to Outcome.Cancelled (cancelled=true, no error=true), the same
-            // classification core's withCanonicalLog uses, so the servlet and suspend entry
-            // points tell the same story.
-            val outcome = scope.outcomeFor(error)
-            if (error is AsyncTimeoutCancellationException && ctx.snapshot()[CanonicalFields.CANCEL_REASON] == null) {
-                ctx.put(CanonicalFields.CANCEL_REASON, "async_timeout")
-            }
-            scope.enrich(adapter, exchange, outcome)
-            val keep = try {
-                sampler.shouldEmit(ctx)
-            } catch (e: Exception) {
-                libraryLogger.warn(
-                    "sampler threw for work unit {}; failing open, canonical line still written",
-                    ctx.workUnit.id,
-                    e,
-                )
-                true
-            }
-            if (keep) {
-                scope.emit { writer.write(it) }
-            }
-        }
-
-        try {
-            // Sync and async paths are mutually exclusive: if chain.doFilter throws,
-            // we never register the listener (and emit fires from the catch arm); if
-            // the chain returns and async was started, the listener owns emit; otherwise
-            // we emit synchronously here. So emit() is called exactly once per request
-            // — single-shot semantics live in [CanonicalLogAsyncEmitListener] for the
-            // async case, where servlet containers may fire multiple terminal callbacks.
+        runCanonicalHttpRequest(request, response, adapter, writer, sampler) {
             filterChain.doFilter(request, response)
-            if (request.isAsyncStarted) {
-                request.asyncContext.addListener(CanonicalLogAsyncEmitListener(::emit))
-            } else {
-                emit(error = null)
-            }
-        } catch (t: Throwable) {
-            emit(error = t)
-            throw t
-        } finally {
-            scope.unbind()
         }
     }
-}
-
-/**
- * Servlet [AsyncListener] that funnels every terminal callback (`onComplete`,
- * `onError`, `onTimeout`) into exactly one `emit` call.
- *
- * Containers vary: some fire `onError` then `onComplete`; some fire `onTimeout` then
- * `onComplete`; some fire `onComplete` alone; pathological cases can fire the same
- * callback twice. The internal [AtomicBoolean] enforces single-emit regardless,
- * so callers don't have to guard their own lambda. The first callback wins —
- * subsequent callbacks are silently dropped (their error/cause is not captured).
- *
- * `onStartAsync` re-registers this listener on the new async cycle (the servlet
- * spec requires manual re-registration after `AsyncContext.dispatch()`); the
- * single-emit guard makes that safe even if a container ends up holding two
- * registrations and firing terminal callbacks twice.
- *
- * See `CanonicalLogFilterAsyncPropertyTest` for the orderings property pin.
- */
-internal class CanonicalLogAsyncEmitListener(
-    private val emit: (Throwable?) -> Unit,
-) : AsyncListener {
-    private val emitted = AtomicBoolean(false)
-
-    override fun onComplete(event: AsyncEvent) = emitOnce(event.throwable)
-    override fun onError(event: AsyncEvent) = emitOnce(event.throwable)
-    override fun onTimeout(event: AsyncEvent) = emitOnce(AsyncTimeoutCancellationException())
-    override fun onStartAsync(event: AsyncEvent) {
-        event.asyncContext.addListener(this)
-    }
-
-    private fun emitOnce(error: Throwable?) {
-        if (emitted.compareAndSet(false, true)) emit(error)
-    }
-}
-
-/**
- * Cancellation signal synthesized when the servlet container's async timeout fires.
- *
- * An async timeout means the work was cut off, not that it failed — so the filter
- * maps it to [Outcome.Cancelled] (`cancelled=true`, `cancel_reason="async_timeout"`)
- * rather than the `TimeoutException` → `Outcome.Threw` → `error=true` it used to
- * synthesize. Note the on-the-wire status the container writes after the listeners
- * run is container-dependent (Tomcat sends a 500 error page if nothing completed
- * the request); the canonical line deliberately reports the cancellation (499 by
- * [HttpWorkUnitAdapter]'s convention), not the container's error page.
- */
-internal class AsyncTimeoutCancellationException : CancellationException("async dispatch timeout") {
-    // A synthesized signal's stack trace (container timer thread) has no diagnostic
-    // value; skip constructing it.
-    override fun fillInStackTrace(): Throwable = this
 }

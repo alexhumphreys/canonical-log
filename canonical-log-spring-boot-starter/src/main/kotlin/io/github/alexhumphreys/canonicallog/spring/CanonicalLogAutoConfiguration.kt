@@ -5,6 +5,8 @@ import io.github.alexhumphreys.canonicallog.CanonicalLogMdc
 import io.github.alexhumphreys.canonicallog.CanonicalLogSampler
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import io.github.alexhumphreys.canonicallog.logstash.LogstashCanonicalLineWriter
+import io.github.alexhumphreys.canonicallog.servlet.HttpExchange
+import io.github.alexhumphreys.canonicallog.servlet.HttpWorkUnitAdapter
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
@@ -63,7 +65,10 @@ public open class CanonicalLogAutoConfiguration(properties: CanonicalLogHttpProp
         writer: CanonicalLineWriter,
         sampler: ObjectProvider<CanonicalLogSampler>,
     ): CanonicalLogFilter = CanonicalLogFilter(
-        adapter = adapter.getIfAvailable { HttpWorkUnitAdapter() },
+        // Default adapter reads the Spring route (BEST_MATCHING_PATTERN) first — a bare
+        // HttpWorkUnitAdapter() would only see the servlet-generic ROUTE_ATTRIBUTE and lose
+        // http_route under Spring MVC.
+        adapter = adapter.getIfAvailable { HttpWorkUnitAdapter(springRouteResolver) },
         writer = writer,
         excludePaths = properties.excludePaths,
         sampler = sampler.getIfAvailable { CanonicalLogSampler { true } },
