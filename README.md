@@ -66,6 +66,62 @@ The list parameter composes cleanly: the canonical customizer ships under the be
 
 The same pattern works for `RestTemplateBuilder` / `WebClient.Builder` users — Spring's own builders use the same shape.
 
+## Dropwizard quickstart
+
+Not on Spring? A Dropwizard 4 service (Jersey on Jetty) gets the same one-line-per-request treatment from a single bundle. Add the dependency:
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.alexhumphreys:canonical-log-dropwizard:0.1.0-SNAPSHOT")
+}
+```
+
+Register the bundle in your application's `initialize`:
+
+```kotlin
+class MyApplication : Application<MyConfig>() {
+    override fun initialize(bootstrap: Bootstrap<MyConfig>) {
+        bootstrap.addBundle(CanonicalLogBundle())
+        // Exclude app-port health probes: CanonicalLogBundle(excludePaths = listOf("/ping"))
+    }
+}
+```
+
+That's it — the bundle installs the servlet filter (one canonical line per **application-port** request, with the matched Jersey route template as `http_route`) plus a post-matching Jersey filter that captures that template. Admin-port traffic (healthchecks, metrics) never opens a work unit, so it costs nothing.
+
+The default writer is `MdcCanonicalLineWriter`, because Dropwizard's stock JSON layout (`EventJsonLayout`) renders slf4j MDC but not logstash structured arguments. Turn on `flattenMdc` so the canonical fields become top-level JSON keys:
+
+```yaml
+# config.yml
+logging:
+  appenders:
+    - type: console
+      layout:
+        type: json
+        flattenMdc: true   # canonical fields become top-level JSON keys
+```
+
+One resulting line (fields arrive as strings — MDC is string-valued; adopters who want typed counts/durations pass a `LogstashCanonicalLineWriter` and route the `canonical` logger to a logstash-encoder appender):
+
+```json
+{
+  "timestamp": "2026-07-04T09:12:44.019Z",
+  "level": "INFO",
+  "logger": "canonical",
+  "message": "GET /posts/{id} 200 12ms",
+  "http_request_method": "GET",
+  "url_path": "/posts/7",
+  "http_route": "/posts/{id}",
+  "http_response_status_code": "200",
+  "http_request_duration_ms": "12",
+  "work_unit_id": "746190a4-6f65-4d97-9b75-e7f6ebdaca7d",
+  "work_unit_kind": "http"
+}
+```
+
+Built against Dropwizard 4.0.x (jakarta namespace); Dropwizard 2/3 (`javax.*`) is not supported. Contribute business fields from a resource with the same `CanonicalLog.put(...)` / `CanonicalLog.markFailed(...)` API shown above.
+
 ## What gets in the canonical log
 
 Three real example lines from the [sample app](samples/spring-demo/), one per outcome shape. Each is one line of JSON; pretty-printed here for readability.
@@ -234,6 +290,7 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 - `canonical-log-okhttp-spring-boot-starter` / `canonical-log-jdbc-spring-boot-starter` — per-contributor auto-config
 - `canonical-log-scheduling-spring-boot-starter` — transparent `@Scheduled` instrumentation via Spring's scheduled-task observation
 - `canonical-log-spring-boot-starter` — umbrella: HTTP filter + transitive contributor starters
+- `canonical-log-dropwizard` — Dropwizard 4 bundle (non-Spring): one `addBundle` for a canonical line per request
 
 ## Roadmap (deferred from v0.1)
 
