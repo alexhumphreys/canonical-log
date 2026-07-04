@@ -13,6 +13,7 @@ logback = "1.5.18"
 junit-jupiter = "5.13.4"
 postgresql = "42.7.7"
 h2 = "2.3.232"
+axion-release = "1.21.2"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
@@ -54,3 +55,4 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dep-mgmt = { id = "io.spring.dependency-management", version.ref = "spring-dep-mgmt" }
+axion-release = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion-release" }
