@@ -6,11 +6,25 @@ plugins {
     alias(libs.plugins.kotlin.spring) apply false
     alias(libs.plugins.spring.boot) apply false
     alias(libs.plugins.spring.dep.mgmt) apply false
+    alias(libs.plugins.axion.release)
 }
+
+// Version is derived from git tags by axion-release. On a tagged commit this is a
+// clean release version (e.g. 1.2.0); otherwise the next version with a -SNAPSHOT
+// suffix. The release job bumps the tag; the bump size (major/minor/patch) is chosen
+// from the merged PR's conventional-commit title via -Prelease.versionIncrementer.
+scmVersion {
+    tag {
+        prefix.set("v")
+    }
+    versionIncrementer("incrementPatch")
+}
+
+val computedVersion = scmVersion.version
 
 subprojects {
     group = "io.github.alexhumphreys"
-    version = "0.1.0-SNAPSHOT"
+    version = computedVersion
 
     apply(plugin = "org.jetbrains.kotlin.jvm")
 
@@ -45,10 +59,23 @@ subprojects {
                 freeCompilerArgs.add("-Xexplicit-api=strict")
             }
         }
+        extensions.configure<JavaPluginExtension> {
+            withSourcesJar()
+        }
         extensions.configure<PublishingExtension> {
             publications {
                 create<MavenPublication>("maven") {
                     afterEvaluate { from(components["java"]) }
+                }
+            }
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/alexhumphreys/canonical-log")
+                    credentials {
+                        username = System.getenv("GITHUB_ACTOR")
+                        password = System.getenv("GITHUB_TOKEN")
+                    }
                 }
             }
         }

@@ -1,0 +1,73 @@
+name: Release
+
+# Publishes a versioned release to GitHub Maven Packages whenever a PR is merged
+# into main. The version bump (major/minor/patch) is chosen from the merged PR's
+# conventional-commit title:
+#   - `feat!:` / `fix!:` / any `type!:` / `BREAKING CHANGE` -> major
+#   - `feat:`                                               -> minor
+#   - everything else (fix, perf, chore, docs, ...)         -> patch
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write # axion pushes the new git tag
+  packages: write # publish artifacts to GitHub Packages
+
+jobs:
+  release:
+    name: Tag & publish
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags so axion can compute the version
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Determine version bump from PR title
+        id: bump
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          title="$PR_TITLE"
+          echo "PR title: $title"
+          if printf '%s' "$title" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
+            || printf '%s' "$title" | grep -qiE 'BREAKING[ -]CHANGE'; then
+            incrementer=incrementMajor
+          elif printf '%s' "$title" | grep -qE '^feat(\([^)]*\))?:'; then
+            incrementer=incrementMinor
+          else
+            incrementer=incrementPatch
+          fi
+          echo "Selected incrementer: $incrementer"
+          echo "incrementer=$incrementer" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create & push release tag
+        run: >-
+          ./gradlew release
+          -Prelease.versionIncrementer=${{ steps.bump.outputs.incrementer }}
+          -Prelease.disableChecks
+          --stacktrace
+
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew publish --stacktrace
