@@ -194,36 +194,28 @@ The HTTP adapter defers to handler-set `error_reason` and only injects defaults 
 
 Cancellation is not a failure: a `Cancelled` line carries `cancelled=true` and a `cancel_reason` (`async_timeout` when the servlet async timeout fired, `cancelled` otherwise) instead of `error=true`, so timeouts and client disconnects don't pollute error rates. The HTTP adapter reports status `499` (nginx's "client closed request" convention) for cancelled requests unless an error status was already set. The `CancellationException` itself is always rethrown after the line is emitted — observing cancellation never breaks structured concurrency.
 
-## Beyond HTTP: opening a work unit by hand
+## Beyond HTTP: scheduled jobs (and other entry points)
 
-The HTTP filter is just one entry point. `WorkUnitAdapter` generalizes to any unit of work — a Kafka consume, a `@Scheduled` job, a message handler. You write an adapter and open the unit with `withCanonicalLogBlocking` (or `withCanonicalLog` for suspend code); everything downstream — the accumulator, the JDBC/OkHttp contributors, MDC correlation — works unchanged, because contributors resolve the active unit off the current thread, not off anything HTTP-specific.
+The HTTP filter is just one entry point. The work-unit lifecycle generalizes to any unit of work — a Kafka consume, a `@Scheduled` job, a message handler — and everything downstream (the accumulator, the JDBC/OkHttp contributors, MDC correlation) works unchanged, because contributors resolve the active unit off the current thread, not off anything HTTP-specific.
 
-The sample demonstrates this with a `@Scheduled` job ([`ReportingJob`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ReportingJob.kt) + [`ScheduledJobAdapter`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ScheduledJobAdapter.kt)):
+For `@Scheduled` jobs there's a drop-in starter — add `canonical-log-scheduling-spring-boot-starter` to the classpath and your existing scheduled methods emit a canonical line each run, with **no change to the method body**:
 
 ```kotlin
-class ScheduledJobAdapter : WorkUnitAdapter<String> {
-    override fun describe(input: String) =
-        WorkUnit(UUID.randomUUID().toString(), "scheduled_job", Instant.now())
-
-    override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
-        ctx.put(CanonicalFields.WORK_UNIT_ID, ctx.workUnit.id)
-        ctx.put(CanonicalFields.WORK_UNIT_KIND, ctx.workUnit.kind)
-        ctx.put("job_name", input)
-        ctx.put("job_duration_ms", outcome.durationMs)
-        // ... plus error markers on Outcome.Threw, same as HttpWorkUnitAdapter
+@Component
+class ReportingJob(private val jdbc: JdbcTemplate) {
+    @Scheduled(fixedDelayString = "5000")
+    fun generateReport() {
+        val rows = jdbc.queryForObject("SELECT count(*) FROM posts", Long::class.java)
+        CanonicalLog.put("report_row_count", rows) // db_query_count lands automatically
     }
-}
-
-// in the job:
-withCanonicalLogBlocking(adapter, "daily_report", writer::write) {
-    val rows = jdbc.queryForObject("SELECT count(*) FROM posts", Long::class.java)
-    CanonicalLog.put("report_row_count", rows) // db_query_count lands automatically
 }
 ```
 
-The job run emits its own line with `work_unit_kind=scheduled_job` and the JDBC contributor's `db_query_count` — no HTTP involved. It's off by default (so it doesn't add background noise); enable it with `--canonical-log.sample.scheduled-job.enabled=true`. Pinned by `ReportingJobEndToEndTest`.
+Each run emits a line with `work_unit_kind=scheduled_job`, `job_name=ReportingJob.generateReport` (derived from the method), `job_duration_ms`, the JDBC contributor's `db_query_count`, and your `report_row_count` — no HTTP involved. It hooks Spring's own scheduled-task observation (not AOP), so it's transparent and needs only `@EnableScheduling` (no actuator). Override the job identity/fields with a `WorkUnitAdapter<ScheduledTaskObservationContext>` bean; opt out with `canonical-log.scheduling.enabled=false`.
 
-One rough edge a job author hits that the HTTP filter hides: the emit sink isn't injectable, so the job constructs a `LogstashCanonicalLineWriter()` directly. Tracked in `docs/todos/019-job-entry-point-ergonomics.md`.
+For an entry point Spring doesn't instrument for you, open the unit explicitly with `withCanonicalLogBlocking(adapter, input, emit) { ... }` (or `withCanonicalLog` for suspend code) and a hand-written `WorkUnitAdapter` — that's all the scheduling starter does internally.
+
+The sample demonstrates the scheduled path with [`ReportingJob`](samples/spring-demo/src/main/kotlin/io/github/alexhumphreys/canonicallog/sample/ReportingJob.kt); it's off by default (so it doesn't add background noise), enable with `--canonical-log.sample.scheduled-job.enabled=true`. Pinned by `ReportingJobEndToEndTest`.
 
 ## Sample
 
@@ -234,6 +226,7 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 - `canonical-log-core` — accumulator, SPI, no framework deps
 - `canonical-log-okhttp` / `canonical-log-jdbc` — contributor instrumentation
 - `canonical-log-okhttp-spring-boot-starter` / `canonical-log-jdbc-spring-boot-starter` — per-contributor auto-config
+- `canonical-log-scheduling-spring-boot-starter` — transparent `@Scheduled` instrumentation via Spring's scheduled-task observation
 - `canonical-log-spring-boot-starter` — umbrella: HTTP filter + transitive contributor starters
 
 ## Roadmap (deferred from v0.1)

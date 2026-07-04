@@ -15,10 +15,10 @@ import org.springframework.context.ConfigurableApplicationContext
 /**
  * End-to-end test of the second (non-HTTP) entry point: the `@Scheduled` [ReportingJob].
  *
- * Proves that the work-unit lifecycle and `WorkUnitAdapter` generalize past the HTTP
- * filter — a hand-written adapter plus [io.github.alexhumphreys.canonicallog.withCanonicalLogBlocking]
- * emit one canonical line per job run, and the JDBC contributor (unchanged, entry-point
- * agnostic) lands its fields on that line because the query runs on the job's bound thread.
+ * Proves the `canonical-log-scheduling-spring-boot-starter` instruments a plain `@Scheduled`
+ * method transparently — one canonical line per run, `work_unit_kind=scheduled_job`, and the JDBC
+ * contributor (unchanged, entry-point agnostic) landing its fields because the query runs on the
+ * job's bound scheduler thread.
  *
  * The job is off by default; this test boots the app with the enabling flag plus fast
  * timings so a line appears within the poll window.
@@ -57,9 +57,9 @@ class ReportingJobEndToEndTest : DescribeSpec({
             val snap = awaitScheduledLine(appender)
                 ?: error("no scheduled-job canonical line was emitted within the timeout")
 
-            // Job identity — proves the hand-written adapter ran.
+            // Job identity — derived mechanically from the method by the starter's adapter.
             snap["work_unit_kind"] shouldBe "scheduled_job"
-            snap["job_name"] shouldBe "daily_report"
+            snap["job_name"] shouldBe "ReportingJob.generateReport"
             (snap["work_unit_id"] as String).shouldNotBeEmpty()
             (snap["job_duration_ms"] as Long).shouldBeGreaterThanOrEqual(0L)
 

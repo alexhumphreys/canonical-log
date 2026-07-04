@@ -12,6 +12,7 @@ include(
     "canonical-log-okhttp-spring-boot-starter",
     "canonical-log-jdbc",
     "canonical-log-jdbc-spring-boot-starter",
+    "canonical-log-scheduling-spring-boot-starter",
     "canonical-log-spring-boot-starter",
     "canonical-log-test",
     "samples:spring-demo",

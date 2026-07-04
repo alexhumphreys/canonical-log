@@ -6,6 +6,7 @@ plugins {
 
 dependencies {
     implementation(project(":canonical-log-spring-boot-starter"))
+    implementation(project(":canonical-log-scheduling-spring-boot-starter"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.reactor)
     implementation(libs.kotlin.reflect)

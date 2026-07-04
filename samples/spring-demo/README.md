@@ -61,7 +61,7 @@ Returns `404`, and the canonical line shows `error=true`, `error_reason=post_not
 
 ## Non-HTTP entry point (scheduled job)
 
-The same canonical-log machinery works outside HTTP. `ReportingJob` is a `@Scheduled` job that opens a work unit by hand with a hand-written `ScheduledJobAdapter` — see [the "Beyond HTTP" section in the top-level README](../../README.md#beyond-http-opening-a-work-unit-by-hand). It's off by default; enable it:
+The same canonical-log machinery works outside HTTP. `ReportingJob` is a *plain* `@Scheduled` method — no wrapping — instrumented transparently by `canonical-log-scheduling-spring-boot-starter` (see [the "Beyond HTTP" section in the top-level README](../../README.md#beyond-http-scheduled-jobs-and-other-entry-points)). It's off by default; enable it:
 
 ```sh
 ./gradlew :samples:spring-demo:bootRun --args='--canonical-log.sample.scheduled-job.enabled=true'
@@ -73,7 +73,7 @@ Every few seconds you'll see a canonical line with no HTTP fields:
 {
   "logger_name": "canonical",
   "work_unit_kind": "scheduled_job",
-  "job_name": "daily_report",
+  "job_name": "ReportingJob.generateReport",
   "job_duration_ms": 4,
   "db_query_count": 1,
   "db_execution_count": 1,
