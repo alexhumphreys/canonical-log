@@ -105,6 +105,8 @@ If you can't explain a proposed contributor in those terms, it probably belongs 
 
 **OTel positioning.** OpenTelemetry is a data model and transport, orthogonal to the canonical log pattern. Ship `canonical-log-otel` as an optional sink module later. Do not make OTel a core dependency.
 
+**Java 17 bytecode floor** (added 2026-07-04, todo 025). Library modules (`:canonical-log-*`, starters included) target Java 17 bytecode; the JDK 25 toolchain still does the compiling and runs the tests. Spring Boot 4 baselines on 17, so the starters go to 17 uniformly with the framework-agnostic modules — no starter exception was needed. The bytecode floor is a **compatibility contract**: a 17 JVM refuses major-version > 61 class files and Gradle refuses via the `org.gradle.jvm.version` module-metadata attribute, so raising the floor later is a *breaking* change for consumers — it only goes up with a deliberate major-ish release. `-Xjdk-release=17` (Kotlin) / `options.release(17)` (javac) are load-bearing and non-negotiable: with a 25 toolchain, `jvmTarget`/target alone changes the class-file version but still compiles against the 25 class library, so an 18+-only API reference would produce a jar that `NoSuchMethodError`s on a real 17 JVM. `-Xjdk-release`/`release` compile against the 17 API surface (ct.sym), turning any such reference into a compile error — that flag *is* the audit that keeps us honest, so don't drop it when touching the root build. Pinned two ways: `canonical-log-core:BytecodeTargetTest` reads `CanonicalLog.class` and asserts major version 61, and CI's `test-jdk17` job re-runs the library suites on a real JDK 17 launcher via `-Ptest.jdk=17` (the root build's per-library `Test.javaLauncher` override, scoped to libraries because samples target 21 and can't load on 17). Samples stay on JDK 21 target.
+
 **OkHttp wiring uses a customizer, not a `BeanPostProcessor`.** The HTTP filter and JDBC starters auto-wire transparently — Spring controls when their hook fires (filter chain, bean construction). OkHttp is different: an `OkHttpClient` is configured via builders and its interceptors can't be added after `build()`. Three options were considered:
 
 1. **`BeanPostProcessor` that wraps `OkHttpClient` beans.** To add an interceptor we'd have to call `.newBuilder().addInterceptor(...).build()`, returning a *different instance*. Anyone holding a reference to the original by constructor injection still has the uninstrumented one — silent bugs. Rejected.
@@ -244,7 +246,7 @@ Bridge bulletproofing produced:
 - `withCanonicalCoroutineContext` helper for blocking-entry → suspend bridges.
 - Async-aware `CanonicalLogFilter` that defers emit until `AsyncListener.onComplete` for suspend / `Callable` / `DeferredResult` / SSE handlers.
 
-Stack: JDK 25, Gradle 9.5, Spring Boot 4, Kotlin 2.2.20.
+Stack: built and tested on JDK 25, Gradle 9.5, Spring Boot 4, Kotlin 2.2.20; library modules target **Java 17 bytecode** (see the "Java 17 bytecode floor" decision).
 
 ## What's next
 

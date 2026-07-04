@@ -11,6 +11,7 @@ Stripe-style [canonical log lines](https://stripe.com/blog/canonical-log-lines) 
 - A Kotlin library on top of SLF4J + Logback, packaged as Spring Boot starters.
 - A pattern, not a framework: contributors mechanically add fields to a per-request accumulator; the line is emitted at request end.
 - Coroutine- and virtual-thread-aware out of the box.
+- Requires **Java 17+**; built and tested on JDK 25 (the library modules ship Java 17 bytecode, and the suite also runs on a JDK 17 launcher in CI).
 
 ## What it isn't
 
