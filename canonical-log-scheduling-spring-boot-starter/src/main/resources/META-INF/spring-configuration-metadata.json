@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.scheduling.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether @Scheduled methods are instrumented with a canonical line (via Spring's scheduled-task observation). Active when absent (matchIfMissing); set false to disable. Requires @EnableScheduling in the application.",
+      "defaultValue": true
+    }
+  ]
+}

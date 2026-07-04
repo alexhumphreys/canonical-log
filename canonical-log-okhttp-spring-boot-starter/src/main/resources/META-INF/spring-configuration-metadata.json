@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.okhttp.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the OkHttp canonical-log customizer bean is auto-configured (an OkHttpClientBuilderCustomizer that adds the canonical interceptor). Active when absent (matchIfMissing); set false to disable. Note: adopters must still apply the customizer to their own OkHttpClient.Builder for it to take effect.",
+      "defaultValue": true
+    }
+  ]
+}

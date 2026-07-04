@@ -1,0 +1,24 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.http.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the HTTP canonical-log filter is registered. Active when absent (matchIfMissing); set false to disable canonical logging of HTTP requests.",
+      "sourceType": "io.github.alexhumphreys.canonicallog.spring.CanonicalLogHttpProperties",
+      "defaultValue": true
+    },
+    {
+      "name": "canonical-log.http.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Ant-style path patterns matched against the request URI (the same value the url_path field reports). Matching requests skip the work unit entirely: no context is bound and no canonical line is emitted. Typical use is silencing health probes, e.g. /actuator/**.",
+      "sourceType": "io.github.alexhumphreys.canonicallog.spring.CanonicalLogHttpProperties"
+    },
+    {
+      "name": "canonical-log.http.mdc-enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the active work unit's id is mirrored into SLF4J MDC under work_unit_id so ordinary log lines correlate with the canonical line. Applied process-wide at startup, so it also governs the core entry points and propagation helpers, not just the HTTP filter. Set false if your shop already manages MDC.",
+      "sourceType": "io.github.alexhumphreys.canonicallog.spring.CanonicalLogHttpProperties",
+      "defaultValue": true
+    }
+  ]
+}

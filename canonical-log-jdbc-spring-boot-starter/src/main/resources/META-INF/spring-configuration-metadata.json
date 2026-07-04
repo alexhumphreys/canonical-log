@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.jdbc.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the JDBC canonical-log contributor is auto-configured (a BeanPostProcessor wraps DataSource beans in a datasource-proxy that records db_query_count and related fields). Active when absent (matchIfMissing); set false to disable.",
+      "defaultValue": true
+    }
+  ]
+}
