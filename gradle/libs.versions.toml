@@ -15,6 +15,7 @@ jackson = "2.18.2"
 postgresql = "42.7.7"
 h2 = "2.3.232"
 jakarta-servlet-api = "5.0.0"
+dropwizard = "4.0.17"
 axion-release = "1.21.2"
 
 [libraries]
@@ -38,6 +39,13 @@ datasource-proxy = { module = "net.ttddyy:datasource-proxy", version.ref = "data
 # compiles against a surface that loads on EE9 containers (Jetty 11) and EE10+ alike. It's a
 # compileOnly floor — adopters/starters bring their own newer servlet-api at runtime.
 jakarta-servlet-api = { module = "jakarta.servlet:jakarta.servlet-api", version.ref = "jakarta-servlet-api" }
+
+# Dropwizard 4.0.x (jakarta.* namespace). dropwizard-core is a compileOnly floor for the
+# canonical-log-dropwizard bundle so the adopter's own Dropwizard version wins at runtime;
+# dropwizard-testing (same version) drives the in-process e2e suite. Dropwizard 2/3
+# (javax.*) is not supported.
+dropwizard-core = { module = "io.dropwizard:dropwizard-core", version.ref = "dropwizard" }
+dropwizard-testing = { module = "io.dropwizard:dropwizard-testing", version.ref = "dropwizard" }
 
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }

@@ -63,7 +63,7 @@ class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
 
         it("emits a human-readable message for the non-HTTP work unit") {
             awaitScheduledLine(appender) ?: error("no scheduled-job canonical line was emitted")
-            val event = appender.list.last { it.loggerName == "canonical" }
+            val event = canonicalEvents(appender).last()
             // Non-HTTP shape: "<work_unit_kind> <work_unit_id>".
             event.formattedMessage shouldStartWith "scheduled_job "
         }
@@ -93,8 +93,7 @@ private fun awaitScheduledLine(
 ): Map<String, Any>? {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {
-        val hit = appender.list
-            .filter { it.loggerName == "canonical" }
+        val hit = canonicalEvents(appender)
             .map(::snapshotOf)
             .firstOrNull { it["work_unit_kind"] == "scheduled_job" }
         if (hit != null) return hit
@@ -102,6 +101,14 @@ private fun awaitScheduledLine(
     }
     return null
 }
+
+// The ticker keeps firing on a scheduler thread, appending to the shared `appender.list`
+// (a plain ArrayList) while these reads run on the test thread — iterating the live list
+// races the append and throws ConcurrentModificationException (the CI flake). Snapshot into
+// a fresh list first (ArrayList's copy constructor uses toArray(), which never CME-throws)
+// so every read sees a stable view; the await loop tolerates a momentarily stale snapshot.
+private fun canonicalEvents(appender: ListAppender<ILoggingEvent>): List<ILoggingEvent> =
+    ArrayList(appender.list).filter { it.loggerName == "canonical" }
 
 private fun snapshotOf(event: ILoggingEvent): Map<String, Any> {
     val args: Array<out Any?> = event.argumentArray ?: emptyArray()

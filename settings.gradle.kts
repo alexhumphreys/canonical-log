@@ -14,6 +14,7 @@ include(
     "canonical-log-jdbc-spring-boot-starter",
     "canonical-log-logstash",
     "canonical-log-servlet",
+    "canonical-log-dropwizard",
     "canonical-log-scheduling-spring-boot-starter",
     "canonical-log-spring-boot-starter",
     "canonical-log-test",
