@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender
 import io.dropwizard.core.Configuration
 import io.dropwizard.testing.ConfigOverride
 import io.dropwizard.testing.DropwizardTestSupport
+import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.maps.shouldContainKey
@@ -15,6 +16,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
 import org.slf4j.LoggerFactory
+import kotlin.time.Duration.Companion.seconds
 
 class CanonicalLogBundleTest : DescribeSpec({
 
@@ -53,7 +55,24 @@ class CanonicalLogBundleTest : DescribeSpec({
     }
 
     fun canonicalEvents(): List<ILoggingEvent> = appender.list.filter { it.loggerName == "canonical" }
-    fun canonicalFields(): Map<String, String> = canonicalEvents().single().mdcPropertyMap
+
+    // The canonical line is emitted on the Jetty request thread; the HTTP response can return
+    // to the client before that thread finishes appending to the shared appender. There's no
+    // happens-before between "client got the response" and "server appended the line", so poll
+    // until THIS request's own line (matched by url_path) is present rather than reading the
+    // appender once. Matching by url_path also means a straggling line from another test can't
+    // be mistaken for this one — the two together are what flaked on slower CI runners while
+    // passing locally. (This still catches a genuine field-bleed bug: it asserts exactly one
+    // line for the path and reads that line's own fields.)
+    suspend fun awaitCanonicalFields(urlPath: String): Map<String, String> {
+        lateinit var fields: Map<String, String>
+        eventually(5.seconds) {
+            val matches = canonicalEvents().filter { it.mdcPropertyMap["url_path"] == urlPath }
+            matches.size shouldBe 1
+            fields = matches.single().mdcPropertyMap
+        }
+        return fields
+    }
 
     describe("CanonicalLogBundle") {
 
@@ -62,8 +81,7 @@ class CanonicalLogBundleTest : DescribeSpec({
             val status = client.target(baseUri).path("/posts/7").request().get().let { it.status.also { _ -> it.close() } }
             status shouldBe 200
 
-            canonicalEvents().size shouldBe 1
-            val fields = canonicalFields()
+            val fields = awaitCanonicalFields("/posts/7")
             fields["http_route"] shouldBe "/posts/{id}"
             fields["url_path"] shouldBe "/posts/7"
             fields["http_request_method"] shouldBe "GET"
@@ -82,8 +100,7 @@ class CanonicalLogBundleTest : DescribeSpec({
                 .let { it.status.also { _ -> it.close() } }
             status shouldBe 200
 
-            canonicalEvents().size shouldBe 1
-            val fields = canonicalFields()
+            val fields = awaitCanonicalFields("/posts/7/comments/3")
             // Empirically pinned: ExtendedUriInfo.matchedTemplates is most-specific-first, so
             // the reversed join reconstructs the full multi-segment route in reading order.
             fields["http_route"] shouldBe "/posts/{id}/comments/{commentId}"
@@ -96,8 +113,7 @@ class CanonicalLogBundleTest : DescribeSpec({
                 .let { it.status.also { _ -> it.close() } }
             status shouldBe 404
 
-            canonicalEvents().size shouldBe 1
-            val fields = canonicalFields()
+            val fields = awaitCanonicalFields("/posts/999")
             fields["error"] shouldBe "true"
             fields["error_reason"] shouldBe "post_not_found"
             fields["http_response_status_code"] shouldBe "404"
@@ -111,8 +127,7 @@ class CanonicalLogBundleTest : DescribeSpec({
 
             status shouldBe 500
 
-            canonicalEvents().size shouldBe 1
-            val fields = canonicalFields()
+            val fields = awaitCanonicalFields("/posts/7/boom")
             fields["error"] shouldBe "true"
             fields["error_reason"] shouldBe "exception"
             // The servlet container wraps the resource exception before it reaches the
@@ -125,15 +140,23 @@ class CanonicalLogBundleTest : DescribeSpec({
         it("emits zero lines for an excluded application-port path") {
             appender.list.clear()
             client.target(baseUri).path("/ping").request().get().close()
-            canonicalEvents().size shouldBe 0
+            // /ping is excluded, so no work unit is ever opened → no line for it can appear,
+            // regardless of emit timing (there's nothing to wait for). Match by url_path so a
+            // straggler from an earlier test can't be counted here.
+            canonicalEvents().none { it.mdcPropertyMap["url_path"] == "/ping" } shouldBe true
         }
 
         it("carries work_unit_id in the MDC of an ordinary handler log line during the request") {
             appender.list.clear()
             client.target(baseUri).path("/posts/7").request().get().close()
 
-            val handlerEvent = appender.list.single { it.loggerName == "test-handler" }
-            handlerEvent.mdcPropertyMap shouldContainKey "work_unit_id"
+            // Same emit-timing gap as the canonical line: await the handler event rather than
+            // reading the shared appender once.
+            eventually(5.seconds) {
+                val handlerEvents = appender.list.filter { it.loggerName == "test-handler" }
+                handlerEvents.size shouldBe 1
+                handlerEvents.single().mdcPropertyMap shouldContainKey "work_unit_id"
+            }
         }
     }
 })
