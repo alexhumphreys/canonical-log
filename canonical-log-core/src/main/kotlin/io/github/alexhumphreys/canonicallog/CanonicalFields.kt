@@ -200,4 +200,23 @@ public object CanonicalFields {
 
     /** `Long` — failed executions (per-execution, one per failed `afterQuery`). */
     public const val DB_EXECUTION_ERROR_COUNT: String = "db_execution_error_count"
+
+    // --- Outbound Kafka producer (canonical-log-kafka: withCanonicalLogging decorator) ---
+    //
+    // These are the producer-side *contributor* fields — this module's own aggregates, like
+    // db_* / http_client_*, so they graduate to constants. The consumer-side messaging_*
+    // fields are NOT here: they stay string literals in KafkaRecordWorkUnitAdapter (the recipe
+    // policy — see the field-constants gotcha and docs/recipes/message-consumers.md).
+
+    /** `Long` — one increment per `Producer.send` issued inside a work unit (counted at submit). */
+    public const val KAFKA_PRODUCE_COUNT: String = "kafka_produce_count"
+
+    /** `Long` — sends whose acknowledgement completed with an exception (delivery failure). */
+    public const val KAFKA_PRODUCE_ERROR_COUNT: String = "kafka_produce_error_count"
+
+    /**
+     * `Long` — total wall-clock time from submit to acknowledgement across sends, integer ms.
+     * Only acks that land before the line is emitted contribute (snapshot-at-emit cutoff).
+     */
+    public const val KAFKA_PRODUCE_DURATION_MS_TOTAL: String = "kafka_produce_duration_ms_total"
 }

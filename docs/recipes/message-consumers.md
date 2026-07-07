@@ -1,9 +1,18 @@
 # Recipe: canonical log lines for message consumers
 
 Message consumers — queue poll loops, Kafka-style listener containers, job runners — are
-the next entry-point surface after HTTP. There is **no `canonical-log-kafka` / `-sqs` module
-yet** (a specific-broker contributor stays demand-driven); this recipe is the honest way to
-instrument one *today*, using only the public core API.
+the next entry-point surface after HTTP. This recipe is the broker-agnostic way to instrument
+one using only the public core API.
+
+> **Kafka ships a concrete adapter.** `canonical-log-kafka`'s
+> `KafkaRecordWorkUnitAdapter` **is** the `WorkUnitAdapter<ConsumerRecord<*, *>>` this recipe
+> hand-rolls below, applied to Kafka — the poll loop stays yours (no consumer runner ships),
+> the adapter becomes a one-liner. It writes the same `messaging_*` **string-literal** fields
+> shown here (`messaging_system="kafka"`, topic, partition, offset), plus a producer-side
+> decorator (`Producer.withCanonicalLogging()`). Its producer aggregate fields
+> (`kafka_produce_*`) *are* `CanonicalFields` constants — the contributor/handler split: fields
+> a shipped library module writes graduate to constants; the consumer `messaging_*` fields stay
+> literals (below). Reach for the generic adapter here for any *other* broker.
 
 Everything below is broker-agnostic. Substitute your client's message type for the generic
 `Envelope`; the shape is what matters, not the transport.
@@ -55,9 +64,10 @@ class MessageWorkUnitAdapter : WorkUnitAdapter<Envelope> {
         ctx.put("work_unit_kind", ctx.workUnit.kind)
 
         // OTel messaging semconv, dot -> underscore for Loki. STRING LITERALS on purpose:
-        // CanonicalFields constants are for fields the *library itself* writes, and there is
-        // no messaging contributor yet (see the field-constants gotcha in docs/CLAUDE.md).
-        // When a real canonical-log-kafka / -sqs contributor ships, these graduate to constants.
+        // CanonicalFields constants are reserved for fields where cross-module coordination is
+        // wanted; the consumer messaging_* fields stay literals by policy (see the field-constants
+        // gotcha in docs/CLAUDE.md) — the shipped canonical-log-kafka KafkaRecordWorkUnitAdapter
+        // keeps them literals too. Only its producer aggregates (kafka_produce_*) are constants.
         ctx.put("messaging_system", "generic")
         ctx.put("messaging_destination_name", input.source)
         ctx.put("messaging_message_id", input.id)
