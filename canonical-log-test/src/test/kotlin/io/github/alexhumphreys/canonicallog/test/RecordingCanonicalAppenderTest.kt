@@ -33,7 +33,12 @@ class RecordingCanonicalAppenderTest : DescribeSpec({
                     Thread.sleep(200)
                     emit("late", mapOf("url_path" to "/late"))
                 }
-                val fields = appender.awaitLine { it.mdcPropertyMap["url_path"] == "/late" }
+                // Generous timeout, not the default 5s: the producer thread is unjoined (that is
+                // the point — no happens-before edge), so on a saturated CI runner it can be
+                // starved well past a few seconds before it emits. A passing run still returns in
+                // ~200ms; the large budget only matters on genuine breakage, where the test still
+                // fails, just later. Keeps this timing self-test from flaking on loaded CI.
+                val fields = appender.awaitLine(timeoutMs = 30_000) { it.mdcPropertyMap["url_path"] == "/late" }
                 fields["url_path"] shouldBe "/late"
             }
         }
@@ -53,7 +58,10 @@ class RecordingCanonicalAppenderTest : DescribeSpec({
                         Thread.sleep(150)
                         emit("target", mapOf("marker" to "hit"))
                     }
-                    val fields = appender.awaitLine { it.mdcPropertyMap["marker"] == "hit" }
+                    // Generous timeout for the same reason as the delay test above, and doubly so
+                    // here: the hammer thread is a hot emit loop competing for the same cores, so
+                    // the target thread is the most likely in the suite to be starved under load.
+                    val fields = appender.awaitLine(timeoutMs = 30_000) { it.mdcPropertyMap["marker"] == "hit" }
                     fields["marker"] shouldBe "hit"
                 } finally {
                     stop.set(true)
