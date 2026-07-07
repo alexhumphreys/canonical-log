@@ -326,11 +326,11 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 - `canonical-log-spring-boot-starter` — umbrella: HTTP filter + transitive contributor starters
 - `canonical-log-dropwizard` — Dropwizard 4 bundle (non-Spring): one `addBundle` for a canonical line per request
 - `canonical-log-tracing-otel` — `OtelSeedingAdapter` for `trace_id`/`span_id` from the OpenTelemetry API (MDC-based `MdcSeedingAdapter` lives in core)
+- `canonical-log-kafka` — `KafkaRecordWorkUnitAdapter` (consumer, one line per record) + `Producer.withCanonicalLogging()` (producer aggregates); `kafka-clients` is a `compileOnly` floor
 - `canonical-log-sqs` — `SqsMessageWorkUnitAdapter` for AWS SQS consumers: `messaging_*` fields per message (AWS SDK is `compileOnly`; your own version wins at runtime)
 
 ## Roadmap (deferred from v0.1)
 
-- Kafka contributor
 - Retry / circuit breaker contributor
 - LaunchDarkly contributor
 - WebFlux/Reactor support

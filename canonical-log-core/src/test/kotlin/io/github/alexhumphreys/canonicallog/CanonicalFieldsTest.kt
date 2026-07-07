@@ -59,6 +59,10 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.DB_EXECUTION_DURATION_MS_TOTAL shouldBe "db_execution_duration_ms_total"
             CanonicalFields.DB_SLOW_EXECUTION_COUNT shouldBe "db_slow_execution_count"
             CanonicalFields.DB_EXECUTION_ERROR_COUNT shouldBe "db_execution_error_count"
+
+            CanonicalFields.KAFKA_PRODUCE_COUNT shouldBe "kafka_produce_count"
+            CanonicalFields.KAFKA_PRODUCE_ERROR_COUNT shouldBe "kafka_produce_error_count"
+            CanonicalFields.KAFKA_PRODUCE_DURATION_MS_TOTAL shouldBe "kafka_produce_duration_ms_total"
         }
 
         it("has no duplicate values (a copy-paste bug would alias two fields)") {
@@ -136,4 +140,7 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.DB_EXECUTION_DURATION_MS_TOTAL,
     CanonicalFields.DB_SLOW_EXECUTION_COUNT,
     CanonicalFields.DB_EXECUTION_ERROR_COUNT,
+    CanonicalFields.KAFKA_PRODUCE_COUNT,
+    CanonicalFields.KAFKA_PRODUCE_ERROR_COUNT,
+    CanonicalFields.KAFKA_PRODUCE_DURATION_MS_TOTAL,
 )
