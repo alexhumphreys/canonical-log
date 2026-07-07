@@ -1,7 +1,6 @@
 package io.github.alexhumphreys.canonicallog.scheduling
 
 import io.github.alexhumphreys.canonicallog.CanonicalWorkUnitScope
-import io.github.alexhumphreys.canonicallog.DelicateCanonicalLogApi
 import io.github.alexhumphreys.canonicallog.EmitFn
 import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import io.github.alexhumphreys.canonicallog.openCanonicalWorkUnit
@@ -29,7 +28,6 @@ import org.springframework.scheduling.support.ScheduledTaskObservationContext
  * The scope's own guards mean a throwing `enrich` or `emit` is swallowed-and-recorded rather than
  * failing the scheduled run.
  */
-@OptIn(DelicateCanonicalLogApi::class)
 public class CanonicalScheduledTaskObservationHandler(
     private val adapter: WorkUnitAdapter<ScheduledTaskObservationContext>,
     private val emit: EmitFn,
