@@ -1,9 +1,10 @@
 # Recipe: canonical log lines for message consumers
 
 Message consumers — queue poll loops, Kafka-style listener containers, job runners — are
-the next entry-point surface after HTTP. There is **no `canonical-log-kafka` / `-sqs` module
-yet** (a specific-broker contributor stays demand-driven); this recipe is the honest way to
-instrument one *today*, using only the public core API.
+the next entry-point surface after HTTP. For Kafka and SQS these adapters ship — see
+`KafkaRecordWorkUnitAdapter` (`canonical-log-kafka`) / `SqsMessageWorkUnitAdapter`
+(`canonical-log-sqs`), which concretize this recipe for those brokers. For any other broker,
+this recipe is the honest way to instrument one *today*, using only the public core API.
 
 Everything below is broker-agnostic. Substitute your client's message type for the generic
 `Envelope`; the shape is what matters, not the transport.

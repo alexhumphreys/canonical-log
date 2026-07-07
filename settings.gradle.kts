@@ -16,6 +16,7 @@ include(
     "canonical-log-servlet",
     "canonical-log-dropwizard",
     "canonical-log-tracing-otel",
+    "canonical-log-sqs",
     "canonical-log-scheduling-spring-boot-starter",
     "canonical-log-spring-boot-starter",
     "canonical-log-test",

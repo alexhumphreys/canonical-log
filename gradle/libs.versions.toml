@@ -17,6 +17,7 @@ h2 = "2.3.232"
 jakarta-servlet-api = "5.0.0"
 dropwizard = "4.0.17"
 opentelemetry = "1.63.0"
+awssdk = "2.47.0"
 axion-release = "1.21.2"
 
 [libraries]
@@ -54,6 +55,11 @@ dropwizard-testing = { module = "io.dropwizard:dropwizard-testing", version.ref 
 # never touches core — see the "OTel as a core dependency" anti-goal.
 opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "opentelemetry" }
+
+# AWS SDK v2 SQS is a compileOnly floor for canonical-log-sqs: the adapter only touches the
+# Message model type and MessageSystemAttributeName, so the adopter's own AWS SDK version wins
+# at runtime. Tests build Message.builder() (pure data — no LocalStack/containers).
+awssdk-sqs = { module = "software.amazon.awssdk:sqs", version.ref = "awssdk" }
 
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
