@@ -79,7 +79,6 @@ public typealias EmitFn = (CanonicalLogContext) -> Unit
  * replace the operation's result. The same policy covers a throwing [emit];
  * see [EmitFn].
  */
-@OptIn(DelicateCanonicalLogApi::class)
 public fun <T, R> withCanonicalLogBlocking(
     adapter: WorkUnitAdapter<T>,
     input: T,
@@ -234,23 +233,48 @@ public suspend fun <R> withCanonicalCoroutineContext(
  * A blocking, thread-bound canonical work-unit lifecycle exposed as an open/close pair, for
  * entry points that receive their lifecycle boundaries as *separate callbacks* and so can't
  * use the [withCanonicalLogBlocking] closure form: a servlet filter that binds on request
- * entry but emits from an async listener, or a Micrometer `ObservationHandler` whose
- * `onScopeOpened` / `onStop` bracket the work.
+ * entry but emits from an async listener, a Micrometer `ObservationHandler` whose
+ * `onScopeOpened` / `onStop` bracket the work, or a message-consumer listener that opens the
+ * unit in `onMessage` and finalizes it from an ack/nack callback. This pair (with
+ * [openCanonicalWorkUnit]) is the supported public API for **entry-point authors wiring a new
+ * framework integration** — an adopter instrumenting their own consumer, listener container,
+ * or job runner is exactly that. (See `docs/recipes/message-consumers.md` for the worked
+ * message-consumer recipe.) Its binding *internals* stay delicate — the [CanonicalLogContext]
+ * constructor, [bindCurrentCanonicalContext], and [CanonicalLogMdc.install]/[CanonicalLogMdc
+ * .restore] can corrupt the thread binding and remain `@DelicateCanonicalLogApi`.
  *
  * [openCanonicalWorkUnit] binds the context (threadlocal + MDC, recording nesting under any
  * already-active unit); the returned scope drives the tail — [outcomeFor] classifies a
  * terminal throwable into an [Outcome], [enrich] runs the adapter under the swallow-and-record
  * guard, [unbind] restores the previous binding, and [emit] publishes under the
- * swallow-and-warn guard. The caller sequences [unbind] against [enrich]/[emit] itself,
- * because async entry points must unbind on the originating thread *before* finalizing later
- * (and possibly elsewhere).
+ * swallow-and-warn guard.
+ *
+ * **Invariants the caller must uphold** (the closure form [withCanonicalLogBlocking] sequences
+ * all of these for you — reach for this open/close pair only when you can't):
+ *
+ *  1. **`unbind()` exactly once, in a `finally`, on the thread that called
+ *     [openCanonicalWorkUnit].** The binding is thread-local: unbinding on a different thread
+ *     leaves the opening thread pointing at a finished unit, and the next unit opened there
+ *     records phantom nesting (`parent_work_unit_id` / `work_unit_depth` against a dead
+ *     parent). For an async hand-off, unbind on the originating thread *before* the work
+ *     completes elsewhere; [enrich] / [emit] can run later and from another thread.
+ *  2. **[enrich] before [emit], each at most once.** Both may run later and on another thread
+ *     than the open — that split is the whole reason to use this over the closure form. The
+ *     snapshot [emit] publishes is whatever the accumulator holds at that moment.
+ *  3. **Emit-exactly-once is the caller's job** when the terminal callbacks that trigger
+ *     [enrich] / [emit] can race or repeat (multiple `AsyncListener` callbacks, an ack that
+ *     may fire after a timeout). Guard the finalize step with an [java.util.concurrent.atomic
+ *     .AtomicBoolean] `compareAndSet` — the internal `CanonicalLogAsyncEmitListener` in
+ *     `canonical-log-servlet` is the worked example.
+ *  4. **If none of that applies, use [withCanonicalLogBlocking].** The closure form binds,
+ *     runs the block, classifies the outcome, enriches, unbinds in `finally`, and emits once —
+ *     in the right order, on the right thread — so you don't have to.
  *
  * This is the shared blocking lifecycle behind [withCanonicalLogBlocking] and the servlet
  * filter. It deliberately does not cover the suspend path ([withCanonicalLog]), whose binding
  * is the [CanonicalLogElement] `ThreadContextElement`'s responsibility — keeping the coroutine
  * bridge out of this primitive's scope.
  */
-@DelicateCanonicalLogApi
 public class CanonicalWorkUnitScope internal constructor(
     /** The bound work-unit context; contributors and [CanonicalLog] resolve to it while bound. */
     public val context: CanonicalLogContext,
@@ -274,6 +298,7 @@ public class CanonicalWorkUnitScope internal constructor(
     }
 
     /** Restore the threadlocal + MDC binding displaced at [openCanonicalWorkUnit]. Call exactly once. */
+    @OptIn(DelicateCanonicalLogApi::class)
     public fun unbind() {
         threadLocalContext.set(previousContext)
         CanonicalLogMdc.restore(previousMdc)
@@ -291,7 +316,9 @@ public class CanonicalWorkUnitScope internal constructor(
  * [CanonicalWorkUnitScope] the caller finalizes — see that class for when to reach for this
  * over the [withCanonicalLogBlocking] closure.
  */
-@DelicateCanonicalLogApi
+// This function is public API, but its body drives the delicate binding internals
+// (the [CanonicalLogContext] constructor and [CanonicalLogMdc.install]) — hence the opt-in here.
+@OptIn(DelicateCanonicalLogApi::class)
 public fun <T> openCanonicalWorkUnit(adapter: WorkUnitAdapter<T>, input: T): CanonicalWorkUnitScope {
     val ctx = CanonicalLogContext(adapter.describe(input))
     val previous = threadLocalContext.get()
