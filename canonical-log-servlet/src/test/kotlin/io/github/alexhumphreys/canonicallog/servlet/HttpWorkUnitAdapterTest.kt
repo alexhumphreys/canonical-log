@@ -41,9 +41,49 @@ class HttpWorkUnitAdapterTest : DescribeSpec({
         it("uses X-Request-Id when present") {
             adapter.describe(exchange(requestId = "req-42")).id shouldBe "req-42"
         }
+        it("passes a valid safe-charset header through unchanged") {
+            adapter.describe(exchange(requestId = "abc-123.def_456")).id shouldBe "abc-123.def_456"
+        }
+        it("accepts a 128-char header (the boundary)") {
+            val id = "a".repeat(128)
+            adapter.describe(exchange(requestId = id)).id shouldBe id
+        }
         it("falls back to a generated UUID when missing") {
             val id = adapter.describe(exchange()).id
             id.length shouldBe 36
+        }
+        it("falls back to a UUID for an empty header (treated as absent)") {
+            adapter.describe(exchange(requestId = "")).id.length shouldBe 36
+        }
+        it("falls back to a UUID for an oversized header (>128 chars)") {
+            adapter.describe(exchange(requestId = "a".repeat(129))).id.length shouldBe 36
+        }
+        it("falls back to a UUID for an invalid-charset header") {
+            adapter.describe(exchange(requestId = "has space/and\nnewline")).id.length shouldBe 36
+        }
+    }
+
+    describe("x_request_id_rejected marker") {
+        fun enrichWith(requestId: String?): Map<String, Any?> {
+            val c = ctx()
+            adapter.enrich(c, exchange(requestId = requestId), Outcome.Completed(1L))
+            return c.snapshot()
+        }
+
+        it("is absent for a valid header") {
+            enrichWith("abc-123.def_456").containsKey("x_request_id_rejected") shouldBe false
+        }
+        it("is absent for a missing header (absent is normal, not a rejection)") {
+            enrichWith(null).containsKey("x_request_id_rejected") shouldBe false
+        }
+        it("is absent for an empty header (treated as absent)") {
+            enrichWith("").containsKey("x_request_id_rejected") shouldBe false
+        }
+        it("is true for an oversized header") {
+            enrichWith("a".repeat(129))["x_request_id_rejected"] shouldBe true
+        }
+        it("is true for an invalid-charset header") {
+            enrichWith("has space/and\nnewline")["x_request_id_rejected"] shouldBe true
         }
     }
 
