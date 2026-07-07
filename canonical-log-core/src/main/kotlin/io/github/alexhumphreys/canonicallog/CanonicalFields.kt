@@ -123,6 +123,26 @@ public object CanonicalFields {
     /** `String` — fully-qualified class name of the exception a throwing `seed` raised. */
     public const val SEED_ERROR_CLASS: String = "canonical_log_seed_error_class"
 
+    // --- Trace correlation (written by seeding adapters, not by core itself) ---
+
+    /**
+     * `String` — the active distributed-trace id, for the line ↔ trace join. Underscore form
+     * of OTel's `trace_id` log-correlation name. **Not written by core**: it's ambient state
+     * that only exists at work-unit open on the opening thread, so a seeding adapter captures
+     * it in `seed` — `OtelSeedingAdapter` (canonical-log-tracing-otel) from `Span.current()`,
+     * or `MdcSeedingAdapter` from a tracing agent's MDC. Absent when no span/id is active
+     * (never the all-zeroes sentinel). The library-writes-it rule holds: the seeding module
+     * is the library.
+     */
+    public const val TRACE_ID: String = "trace_id"
+
+    /**
+     * `String` — the active span id, companion to [TRACE_ID]. Underscore form of OTel's
+     * `span_id` log-correlation name; same capture story (a seeding adapter's `seed`, never
+     * core). Absent when no valid span is active.
+     */
+    public const val SPAN_ID: String = "span_id"
+
     // --- Inbound HTTP (canonical-log-spring-boot-starter: HttpWorkUnitAdapter) ---
 
     /** `String` — the request method (`GET`, `POST`, ...). */

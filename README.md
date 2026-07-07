@@ -222,10 +222,32 @@ The handler threw an unhandled `RuntimeException`. The bridge's `Outcome.Threw` 
 | `HttpWorkUnitAdapter` (umbrella starter) | `http_request_method`, `url_path`, `http_route` (matched template, omitted if no route matched), `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, `error_class` (on `Threw`), `error_reason` (default if handler didn't set one), `cancelled` + `cancel_reason` (on `Cancelled`) |
 | `JdbcCanonicalListener` (jdbc starter) | `db_query_count` (statements), `db_execution_count` (round-trips), `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
 | `OkHttpCanonicalInterceptor` (okhttp starter, applied via `OkHttpClientBuilderCustomizer`) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
+| `OtelSeedingAdapter` / `MdcSeedingAdapter` (trace correlation, opt-in) | `trace_id`, `span_id` (only when a valid span / MDC id is active) |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `tag_count`, `comment_count`, `cache_hit`, `error_reason` (handler intent) — anything you want |
 | Logstash encoder + `customFields` | `@timestamp` (UTC), `service_name`, `environment` |
 
 Every field name the library writes is published as a `const` on `CanonicalFields` (in `canonical-log-core`), grouped and documented with its type and semantics. Reference the constant (`CanonicalFields.HTTP_ROUTE`, `CanonicalFields.DB_QUERY_COUNT`, ...) from handler code and query builders instead of a string literal, so a rename is a compile error rather than a silently-diverged dashboard. It's a constants file, not a schema — handlers can still `put` any key they like.
+
+### Trace correlation (`trace_id` / `span_id`)
+
+The single most-requested join is line ↔ trace. Wrap your adapter in a **seeding decorator** and every line opened inside a span carries the ids, so a bad canonical line jumps straight to its distributed trace:
+
+```json
+{
+  "http_route": "/posts/{id}",
+  "http_response_status_code": 200,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "post_id": 1
+}
+```
+
+Two flavours, both shipped as the composition idiom from `WorkUnitAdapter.seed` (capture ambient ids at work-unit *open* on the opening thread — reading them in `enrich` is the bug these prevent, because by then the span may be ended and the thread an async listener's):
+
+- **`canonical-log-tracing-otel`** — `OtelSeedingAdapter(delegate)` reads `Span.current()` from the OpenTelemetry API and writes `trace_id`/`span_id` only when the span context is valid (never the all-zeroes sentinel). OTel is a `compileOnly` dependency; your own OTel version wins at runtime.
+- **`MdcSeedingAdapter`** (in `canonical-log-core`, zero extra dependencies) — for stacks whose tracing agent already mirrors ids into slf4j MDC. Give it a `Map` of MDC key → canonical field: `MdcSeedingAdapter(delegate, mapOf("trace_id" to CanonicalFields.TRACE_ID, "dd.trace_id" to CanonicalFields.TRACE_ID))`. Absent MDC keys cost nothing.
+
+Neither creates spans or reads baggage — they read the ids and leave. Core never gains an OTel dependency.
 
 **Precedence.** Adapter `enrich` runs *after* the handler block, so for the same key the adapter's value wins. The reference adapter deliberately defers to a handler-set `error_reason` / `cancel_reason` (it checks before writing its own default); everything else it writes — status, durations, identity — overwrites. Follow the same check-before-default pattern in custom adapters for fields a handler is expected to own.
 
@@ -303,6 +325,7 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 - `canonical-log-scheduling-spring-boot-starter` — transparent `@Scheduled` instrumentation via Spring's scheduled-task observation
 - `canonical-log-spring-boot-starter` — umbrella: HTTP filter + transitive contributor starters
 - `canonical-log-dropwizard` — Dropwizard 4 bundle (non-Spring): one `addBundle` for a canonical line per request
+- `canonical-log-tracing-otel` — `OtelSeedingAdapter` for `trace_id`/`span_id` from the OpenTelemetry API (MDC-based `MdcSeedingAdapter` lives in core)
 
 ## Roadmap (deferred from v0.1)
 

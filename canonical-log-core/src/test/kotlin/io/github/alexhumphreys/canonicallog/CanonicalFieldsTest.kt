@@ -38,6 +38,9 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.SEED_ERROR shouldBe "canonical_log_seed_error"
             CanonicalFields.SEED_ERROR_CLASS shouldBe "canonical_log_seed_error_class"
 
+            CanonicalFields.TRACE_ID shouldBe "trace_id"
+            CanonicalFields.SPAN_ID shouldBe "span_id"
+
             CanonicalFields.HTTP_REQUEST_METHOD shouldBe "http_request_method"
             CanonicalFields.URL_PATH shouldBe "url_path"
             CanonicalFields.HTTP_ROUTE shouldBe "http_route"
@@ -114,6 +117,8 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.ENRICH_ERROR_CLASS,
     CanonicalFields.SEED_ERROR,
     CanonicalFields.SEED_ERROR_CLASS,
+    CanonicalFields.TRACE_ID,
+    CanonicalFields.SPAN_ID,
     CanonicalFields.HTTP_REQUEST_METHOD,
     CanonicalFields.URL_PATH,
     CanonicalFields.HTTP_ROUTE,
