@@ -164,6 +164,15 @@ public object CanonicalFields {
     /** `Long` — wall-clock request duration in integer milliseconds. */
     public const val HTTP_REQUEST_DURATION_MS: String = "http_request_duration_ms"
 
+    /**
+     * `Boolean` — set by the HTTP adapter when a client-supplied request-id header was present
+     * but rejected (too long, or outside the safe `[A-Za-z0-9._-]` charset), so the work unit
+     * fell back to a generated UUID. A marker for operators to spot misbehaving clients;
+     * omitted (not `false`) when the header is absent/empty or valid — absent is normal, not a
+     * rejection.
+     */
+    public const val X_REQUEST_ID_REJECTED: String = "x_request_id_rejected"
+
     // --- Outbound HTTP client (canonical-log-okhttp: OkHttpCanonicalInterceptor) ---
 
     /** `Long` — one increment per user-issued outbound call (transparent retries/redirects don't count). */

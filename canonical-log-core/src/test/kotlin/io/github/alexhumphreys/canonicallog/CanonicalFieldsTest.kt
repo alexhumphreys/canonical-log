@@ -46,6 +46,7 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.HTTP_ROUTE shouldBe "http_route"
             CanonicalFields.HTTP_RESPONSE_STATUS_CODE shouldBe "http_response_status_code"
             CanonicalFields.HTTP_REQUEST_DURATION_MS shouldBe "http_request_duration_ms"
+            CanonicalFields.X_REQUEST_ID_REJECTED shouldBe "x_request_id_rejected"
 
             CanonicalFields.HTTP_CLIENT_REQUEST_COUNT shouldBe "http_client_request_count"
             CanonicalFields.HTTP_CLIENT_REQUEST_DURATION_MS_TOTAL shouldBe "http_client_request_duration_ms_total"
@@ -128,6 +129,7 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.HTTP_ROUTE,
     CanonicalFields.HTTP_RESPONSE_STATUS_CODE,
     CanonicalFields.HTTP_REQUEST_DURATION_MS,
+    CanonicalFields.X_REQUEST_ID_REJECTED,
     CanonicalFields.HTTP_CLIENT_REQUEST_COUNT,
     CanonicalFields.HTTP_CLIENT_REQUEST_DURATION_MS_TOTAL,
     CanonicalFields.HTTP_CLIENT_4XX_COUNT,

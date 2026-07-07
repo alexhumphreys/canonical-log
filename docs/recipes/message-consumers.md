@@ -4,15 +4,17 @@ Message consumers — queue poll loops, Kafka-style listener containers, job run
 the next entry-point surface after HTTP. This recipe is the broker-agnostic way to instrument
 one using only the public core API.
 
-> **Kafka ships a concrete adapter.** `canonical-log-kafka`'s
-> `KafkaRecordWorkUnitAdapter` **is** the `WorkUnitAdapter<ConsumerRecord<*, *>>` this recipe
-> hand-rolls below, applied to Kafka — the poll loop stays yours (no consumer runner ships),
-> the adapter becomes a one-liner. It writes the same `messaging_*` **string-literal** fields
-> shown here (`messaging_system="kafka"`, topic, partition, offset), plus a producer-side
-> decorator (`Producer.withCanonicalLogging()`). Its producer aggregate fields
-> (`kafka_produce_*`) *are* `CanonicalFields` constants — the contributor/handler split: fields
-> a shipped library module writes graduate to constants; the consumer `messaging_*` fields stay
-> literals (below). Reach for the generic adapter here for any *other* broker.
+> **Kafka and SQS ship concrete adapters.** `canonical-log-kafka`'s
+> `KafkaRecordWorkUnitAdapter` (`WorkUnitAdapter<ConsumerRecord<*, *>>`) and `canonical-log-sqs`'s
+> `SqsMessageWorkUnitAdapter` **are** the adapter this recipe hand-rolls below, applied to those
+> brokers — the poll loop stays yours (no consumer runner ships), the adapter becomes a
+> one-liner. Both write the same `messaging_*` **string-literal** fields shown here
+> (`messaging_system`, destination, plus broker-specific keys like Kafka's partition/offset or
+> SQS's `messaging_sqs_receive_count`). Kafka additionally ships a producer-side decorator
+> (`Producer.withCanonicalLogging()`) whose aggregate fields (`kafka_produce_*`) *are*
+> `CanonicalFields` constants — the contributor/handler split: fields a shipped library module
+> writes graduate to constants; the consumer `messaging_*` fields stay literals (below). Reach
+> for the generic adapter here for any *other* broker.
 
 Everything below is broker-agnostic. Substitute your client's message type for the generic
 `Envelope`; the shape is what matters, not the transport.

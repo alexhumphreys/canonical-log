@@ -18,6 +18,7 @@ jakarta-servlet-api = "5.0.0"
 dropwizard = "4.0.17"
 opentelemetry = "1.63.0"
 kafka = "3.9.1"
+awssdk = "2.47.0"
 axion-release = "1.21.2"
 
 [libraries]
@@ -61,6 +62,10 @@ opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testi
 # adopter's own Kafka client version wins at runtime. Tests bring it on the classpath for
 # MockProducer and the real record types.
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
+# AWS SDK v2 SQS is a compileOnly floor for canonical-log-sqs: the adapter only touches the
+# Message model type and MessageSystemAttributeName, so the adopter's own AWS SDK version wins
+# at runtime. Tests build Message.builder() (pure data — no LocalStack/containers).
+awssdk-sqs = { module = "software.amazon.awssdk:sqs", version.ref = "awssdk" }
 
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }

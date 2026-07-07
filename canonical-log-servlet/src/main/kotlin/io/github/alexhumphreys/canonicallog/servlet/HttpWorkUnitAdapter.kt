@@ -38,7 +38,11 @@ public class HttpWorkUnitAdapter(
 ) : WorkUnitAdapter<HttpExchange> {
 
     override fun describe(input: HttpExchange): WorkUnit = WorkUnit(
-        id = input.request.getHeader("X-Request-Id") ?: UUID.randomUUID().toString(),
+        // A client-supplied X-Request-Id becomes the line's identity (and, via todo 006, an
+        // MDC value on every log line of the request), so a hostile/buggy client could make an
+        // arbitrarily large or garbage value the unit's id. Accept it only when it passes
+        // validation; otherwise fall back to the same generated UUID as the no-header case.
+        id = validRequestId(input.request.getHeader(REQUEST_ID_HEADER)) ?: UUID.randomUUID().toString(),
         kind = "http",
         startedAt = Instant.now(),
     )
@@ -62,6 +66,13 @@ public class HttpWorkUnitAdapter(
         ctx.put(CanonicalFields.HTTP_REQUEST_DURATION_MS, outcome.durationMs)
         ctx.put(CanonicalFields.WORK_UNIT_ID, ctx.workUnit.id)
         ctx.put(CanonicalFields.WORK_UNIT_KIND, ctx.workUnit.kind)
+        // Mark a request whose id header was present but rejected (see describe): the id above
+        // is a fresh UUID, not what the client sent. Absent/empty header is normal, not a
+        // rejection — no marker in that case.
+        val rawRequestId = input.request.getHeader(REQUEST_ID_HEADER)
+        if (!rawRequestId.isNullOrEmpty() && validRequestId(rawRequestId) == null) {
+            ctx.put(CanonicalFields.X_REQUEST_ID_REJECTED, true)
+        }
 
         val current = ctx.snapshot()
         val effectiveStatus = when (outcome) {
@@ -109,6 +120,26 @@ public class HttpWorkUnitAdapter(
         /** Request attribute any framework glue may set to publish the matched route template. */
         public const val ROUTE_ATTRIBUTE: String =
             "io.github.alexhumphreys.canonicallog.servlet.route"
+
+        /** The inbound header read for the work-unit id. Not configurable by design (todo 014). */
+        private const val REQUEST_ID_HEADER = "X-Request-Id"
+
+        /** Max accepted length of a client-supplied request id; longer values are rejected. */
+        private const val MAX_REQUEST_ID_LENGTH = 128
+
+        /**
+         * A safe, low-cardinality id charset: alphanumerics plus `.`, `_`, `-`. Excludes
+         * whitespace, control chars, and separators, so a rejected id can never smuggle
+         * structure into the line or MDC.
+         */
+        private val REQUEST_ID_PATTERN = Regex("[A-Za-z0-9._-]{1,$MAX_REQUEST_ID_LENGTH}")
+
+        /**
+         * Returns [raw] iff it is a non-empty, in-bounds, safe-charset id; otherwise `null`
+         * (absent, empty, oversized, or garbage all collapse to the UUID-fallback path).
+         */
+        private fun validRequestId(raw: String?): String? =
+            raw?.takeIf { it.length <= MAX_REQUEST_ID_LENGTH && REQUEST_ID_PATTERN.matches(it) }
 
         private const val STATUS_BAD_REQUEST = 400
         private const val STATUS_CLIENT_CLOSED_REQUEST = 499
