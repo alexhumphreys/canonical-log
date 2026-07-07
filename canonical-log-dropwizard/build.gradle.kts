@@ -18,4 +18,7 @@ dependencies {
     // the ListAppender round-trip.
     testImplementation(libs.dropwizard.testing)
     testImplementation(libs.logback.classic)
+    // RecordingCanonicalAppender: the shared await/snapshot/exactly-one helper for observing the
+    // line off the Jetty request thread (replaces this spec's awaitCanonicalFields/canonicalEvents).
+    testImplementation(project(":canonical-log-test"))
 }

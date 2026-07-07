@@ -1,12 +1,9 @@
 package io.github.alexhumphreys.canonicallog.dropwizard
 
-import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger as LogbackLogger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import io.dropwizard.core.Configuration
 import io.dropwizard.testing.ConfigOverride
 import io.dropwizard.testing.DropwizardTestSupport
+import io.github.alexhumphreys.canonicallog.test.RecordingCanonicalAppender
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
@@ -15,7 +12,7 @@ import io.kotest.matchers.maps.shouldNotContainKey
 import io.kotest.matchers.nulls.shouldNotBeNull
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 import kotlin.time.Duration.Companion.seconds
 
 class CanonicalLogBundleTest : DescribeSpec({
@@ -33,51 +30,38 @@ class CanonicalLogBundleTest : DescribeSpec({
 
     // Attach the appender AFTER boot: Dropwizard re-reads its logging config during
     // support.before(), which would clear an appender attached earlier (same logback-init
-    // gotcha the Spring sample documents).
-    lateinit var appender: ListAppender<ILoggingEvent>
+    // gotcha the Spring sample documents). Attach at ROOT so the same appender also captures
+    // the ordinary "test-handler" log line used by the MDC-correlation assertion below; the
+    // helper still matches the canonical line by its own logger name.
+    lateinit var appender: RecordingCanonicalAppender
     lateinit var client: Client
     lateinit var baseUri: String
 
     beforeSpec {
         support.before()
-        appender = ListAppender<ILoggingEvent>().also { it.start() }
-        val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as LogbackLogger
-        root.addAppender(appender)
-        root.level = Level.INFO
+        appender = RecordingCanonicalAppender.attach(Logger.ROOT_LOGGER_NAME)
         client = ClientBuilder.newClient()
         baseUri = "http://localhost:${support.localPort}"
     }
 
     afterSpec {
         client.close()
-        (LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as LogbackLogger).detachAppender(appender)
+        appender.close()
         support.after()
     }
 
-    fun canonicalEvents(): List<ILoggingEvent> = appender.list.filter { it.loggerName == "canonical" }
-
     // The canonical line is emitted on the Jetty request thread; the HTTP response can return
-    // to the client before that thread finishes appending to the shared appender. There's no
-    // happens-before between "client got the response" and "server appended the line", so poll
-    // until THIS request's own line (matched by url_path) is present rather than reading the
-    // appender once. Matching by url_path also means a straggling line from another test can't
-    // be mistaken for this one — the two together are what flaked on slower CI runners while
-    // passing locally. (This still catches a genuine field-bleed bug: it asserts exactly one
-    // line for the path and reads that line's own fields.)
-    suspend fun awaitCanonicalFields(urlPath: String): Map<String, String> {
-        lateinit var fields: Map<String, String>
-        eventually(5.seconds) {
-            val matches = canonicalEvents().filter { it.mdcPropertyMap["url_path"] == urlPath }
-            matches.size shouldBe 1
-            fields = matches.single().mdcPropertyMap
-        }
-        return fields
-    }
+    // to the client before that thread finishes appending. There's no happens-before between
+    // "client got the response" and "server appended the line", so await THIS request's own line
+    // (matched by url_path) rather than reading once, and require exactly one — a straggler from
+    // another test can't be miscounted and a genuine field-bleed regression still fails.
+    fun awaitCanonicalFields(urlPath: String): Map<String, Any> =
+        appender.awaitLine { it.mdcPropertyMap["url_path"] == urlPath }
 
     describe("CanonicalLogBundle") {
 
         it("emits exactly one canonical line with route template, path, method, status, duration for a success") {
-            appender.list.clear()
+            appender.clear()
             val status = client.target(baseUri).path("/posts/7").request().get().let { it.status.also { _ -> it.close() } }
             status shouldBe 200
 
@@ -95,7 +79,7 @@ class CanonicalLogBundleTest : DescribeSpec({
         }
 
         it("reconstructs the sub-resource route template most-specific-last") {
-            appender.list.clear()
+            appender.clear()
             val status = client.target(baseUri).path("/posts/7/comments/3").request().get()
                 .let { it.status.also { _ -> it.close() } }
             status shouldBe 200
@@ -108,7 +92,7 @@ class CanonicalLogBundleTest : DescribeSpec({
         }
 
         it("marks a business failure (markFailed) with error+reason but no error_class") {
-            appender.list.clear()
+            appender.clear()
             val status = client.target(baseUri).path("/posts/999").request().get()
                 .let { it.status.also { _ -> it.close() } }
             status shouldBe 404
@@ -121,7 +105,7 @@ class CanonicalLogBundleTest : DescribeSpec({
         }
 
         it("emits an error line with error_class and status 500 for a thrown exception") {
-            appender.list.clear()
+            appender.clear()
             val status = client.target(baseUri).path("/posts/7/boom").request().get()
                 .let { it.status.also { _ -> it.close() } }
 
@@ -138,22 +122,22 @@ class CanonicalLogBundleTest : DescribeSpec({
         }
 
         it("emits zero lines for an excluded application-port path") {
-            appender.list.clear()
+            appender.clear()
             client.target(baseUri).path("/ping").request().get().close()
-            // /ping is excluded, so no work unit is ever opened → no line for it can appear,
-            // regardless of emit timing (there's nothing to wait for). Match by url_path so a
+            // /ping is excluded, so no work unit is ever opened → no line for it can appear.
+            // assertNoLine settles briefly then confirms none matched; match by url_path so a
             // straggler from an earlier test can't be counted here.
-            canonicalEvents().none { it.mdcPropertyMap["url_path"] == "/ping" } shouldBe true
+            appender.assertNoLine { it.mdcPropertyMap["url_path"] == "/ping" }
         }
 
         it("carries work_unit_id in the MDC of an ordinary handler log line during the request") {
-            appender.list.clear()
+            appender.clear()
             client.target(baseUri).path("/posts/7").request().get().close()
 
             // Same emit-timing gap as the canonical line: await the handler event rather than
             // reading the shared appender once.
             eventually(5.seconds) {
-                val handlerEvents = appender.list.filter { it.loggerName == "test-handler" }
+                val handlerEvents = appender.events().filter { it.loggerName == "test-handler" }
                 handlerEvents.size shouldBe 1
                 handlerEvents.single().mdcPropertyMap shouldContainKey "work_unit_id"
             }
