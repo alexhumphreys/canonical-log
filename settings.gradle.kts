@@ -18,6 +18,7 @@ include(
     "canonical-log-tracing-otel",
     "canonical-log-kafka",
     "canonical-log-sqs",
+    "canonical-log-jobrunr",
     "canonical-log-scheduling-spring-boot-starter",
     "canonical-log-spring-boot-starter",
     "canonical-log-test",

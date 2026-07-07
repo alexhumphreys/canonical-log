@@ -90,6 +90,29 @@ public object CanonicalFields {
      */
     public const val WORK_UNIT_DEPTH: String = "work_unit_depth"
 
+    // --- Background / scheduled jobs (canonical-log-jobrunr, scheduling starter) ---
+
+    /**
+     * `String` — the job's logical name, low-cardinality and bounded (one value per job type).
+     * Written by the background/scheduled-job adapters (`canonical-log-jobrunr`'s
+     * `JobRunrWorkUnitAdapter`, the scheduling starter's `ScheduledJobWorkUnitAdapter`), never core.
+     */
+    public const val JOB_NAME: String = "job_name"
+
+    /**
+     * `String` — the job runner's own identifier for this job (JobRunr's `Job.id`), distinct from
+     * [WORK_UNIT_ID] so a canonical line joins back to the runner's dashboard/storage. Written by
+     * `canonical-log-jobrunr`'s `JobRunrWorkUnitAdapter`.
+     */
+    public const val JOB_ID: String = "job_id"
+
+    /**
+     * `Long` — the 1-based processing attempt number for this run (first run = 1, first retry = 2,
+     * ...), derived from the job's failed-state history. Lets a query separate a first failure from
+     * a later retry that succeeded. Written by `canonical-log-jobrunr`'s `JobRunrWorkUnitAdapter`.
+     */
+    public const val JOB_ATTEMPT: String = "job_attempt"
+
     // --- Library self-diagnostics (canonical_log_*) ---
 
     /**

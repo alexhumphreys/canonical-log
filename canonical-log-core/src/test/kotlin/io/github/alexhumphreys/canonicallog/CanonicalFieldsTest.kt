@@ -38,6 +38,10 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.SEED_ERROR shouldBe "canonical_log_seed_error"
             CanonicalFields.SEED_ERROR_CLASS shouldBe "canonical_log_seed_error_class"
 
+            CanonicalFields.JOB_NAME shouldBe "job_name"
+            CanonicalFields.JOB_ID shouldBe "job_id"
+            CanonicalFields.JOB_ATTEMPT shouldBe "job_attempt"
+
             CanonicalFields.TRACE_ID shouldBe "trace_id"
             CanonicalFields.SPAN_ID shouldBe "span_id"
 
@@ -122,6 +126,9 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.ENRICH_ERROR_CLASS,
     CanonicalFields.SEED_ERROR,
     CanonicalFields.SEED_ERROR_CLASS,
+    CanonicalFields.JOB_NAME,
+    CanonicalFields.JOB_ID,
+    CanonicalFields.JOB_ATTEMPT,
     CanonicalFields.TRACE_ID,
     CanonicalFields.SPAN_ID,
     CanonicalFields.HTTP_REQUEST_METHOD,

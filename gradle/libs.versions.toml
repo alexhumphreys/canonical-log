@@ -19,6 +19,7 @@ dropwizard = "4.0.17"
 opentelemetry = "1.63.0"
 kafka = "3.9.1"
 awssdk = "2.47.0"
+jobrunr = "7.5.1"
 axion-release = "1.21.2"
 
 [libraries]
@@ -66,6 +67,13 @@ kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafk
 # Message model type and MessageSystemAttributeName, so the adopter's own AWS SDK version wins
 # at runtime. Tests build Message.builder() (pure data — no LocalStack/containers).
 awssdk-sqs = { module = "software.amazon.awssdk:sqs", version.ref = "awssdk" }
+
+# JobRunr (OSS edition) is a compileOnly floor for canonical-log-jobrunr: CanonicalJobServerFilter
+# only touches the open-source JobServerFilter callbacks and the Job model (id/jobName/state
+# history), so the adopter's own JobRunr — OSS or Pro — wins at runtime. Tests drive a real
+# BackgroundJobServer + InMemoryStorageProvider (both ship in this main artifact); jackson-databind
+# is JobRunr's JSON mapper on the test classpath.
+jobrunr = { module = "org.jobrunr:jobrunr", version.ref = "jobrunr" }
 
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
