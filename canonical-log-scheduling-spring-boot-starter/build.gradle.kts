@@ -21,6 +21,9 @@ dependencies {
     implementation("io.micrometer:micrometer-observation")
 
     testImplementation(project(":canonical-log-core"))
+    // RecordingCanonicalAppender: the shared await/snapshot helper for observing the line off
+    // the scheduler thread (replaces this spec's hand-rolled awaitScheduledLine/canonicalEvents).
+    testImplementation(project(":canonical-log-test"))
     testImplementation(libs.spring.boot.starter)
     testImplementation(libs.spring.boot.starter.test)
     // Tests read canonical fields back off logstash markers (the default writer's output). The

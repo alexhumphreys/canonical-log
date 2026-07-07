@@ -1,18 +1,13 @@
 package io.github.alexhumphreys.canonicallog.scheduling
 
-import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger as LogbackLogger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import io.github.alexhumphreys.canonicallog.CanonicalLog
+import io.github.alexhumphreys.canonicallog.test.RecordingCanonicalAppender
+import io.github.alexhumphreys.canonicallog.test.canonicalFields
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotBeEmpty
 import io.kotest.matchers.string.shouldStartWith
-import net.logstash.logback.marker.MapEntriesAppendingMarker
-import org.slf4j.LoggerFactory
-import org.slf4j.Marker
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.context.ConfigurableApplicationContext
@@ -22,35 +17,37 @@ import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 
 /**
- * Boots a real (non-web) Spring context with `@EnableScheduling` and a fast ticker, and asserts
- * the scheduling auto-config transparently produces one canonical line per run — proving the
- * observation hook binds a work unit around a plain `@Scheduled` method with no wrapping in the
- * body, and that a body-side `CanonicalLog.put` lands on that line.
+ * Boots a real (non-web) Spring context with `@EnableScheduling` and asserts the scheduling
+ * auto-config transparently produces one canonical line per run — proving the observation hook
+ * binds a work unit around a plain `@Scheduled` method with no wrapping in the body, and that a
+ * body-side `CanonicalLog.put` lands on that line.
+ *
+ * The ticker fires exactly once (long fixed delay) so the shared-appender read has a single,
+ * deterministic scheduled-job line to match — [RecordingCanonicalAppender.awaitLine] observes it
+ * off the scheduler thread (await + snapshot, no `ConcurrentModificationException`) and asserts
+ * exactly one.
  */
 class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
 
     var app: ConfigurableApplicationContext? = null
-    val appender = ListAppender<ILoggingEvent>()
+    lateinit var appender: RecordingCanonicalAppender
 
     beforeSpec {
         app = SpringApplicationBuilder(SchedulingTestApp::class.java)
             .web(org.springframework.boot.WebApplicationType.NONE)
             .run()
-        appender.start()
-        val canonical = LoggerFactory.getLogger("canonical") as LogbackLogger
-        canonical.addAppender(appender)
-        canonical.level = Level.INFO
+        // Attach AFTER run() so boot's logback init doesn't clear the appender.
+        appender = RecordingCanonicalAppender.attach()
     }
 
     afterSpec {
         app?.close()
-        (LoggerFactory.getLogger("canonical") as LogbackLogger).detachAppender(appender)
+        appender.close()
     }
 
     describe("scheduled task instrumentation") {
         it("emits a canonical line per run with job identity and a body-contributed field") {
-            val snap = awaitScheduledLine(appender)
-                ?: error("no scheduled-job canonical line was emitted within the timeout")
+            val snap = appender.awaitLine { canonicalFields(it)["work_unit_kind"] == "scheduled_job" }
 
             snap["work_unit_kind"] shouldBe "scheduled_job"
             snap["job_name"] shouldBe "TickerJob.tick"
@@ -62,8 +59,8 @@ class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
         }
 
         it("emits a human-readable message for the non-HTTP work unit") {
-            awaitScheduledLine(appender) ?: error("no scheduled-job canonical line was emitted")
-            val event = canonicalEvents(appender).last()
+            appender.awaitLine { canonicalFields(it)["work_unit_kind"] == "scheduled_job" }
+            val event = appender.events().last { it.loggerName == RecordingCanonicalAppender.CANONICAL_LOGGER_NAME }
             // Non-HTTP shape: "<work_unit_kind> <work_unit_id>".
             event.formattedMessage shouldStartWith "scheduled_job "
         }
@@ -81,47 +78,12 @@ open class SchedulingTestApp {
 }
 
 open class TickerJob {
-    @Scheduled(fixedDelayString = "100", initialDelayString = "50")
+    // Fire once, well after the appender is attached: a single deterministic canonical line lets
+    // the shared-appender read assert exactly-one (a repeating ticker would produce many
+    // identical scheduled_job lines and defeat that check). The long fixed delay parks the next
+    // run an hour out, past the test window.
+    @Scheduled(fixedDelayString = "3600000", initialDelayString = "300")
     open fun tick() {
         CanonicalLog.put("tick_field", "on")
     }
-}
-
-private fun awaitScheduledLine(
-    appender: ListAppender<ILoggingEvent>,
-    timeoutMs: Long = 5_000,
-): Map<String, Any>? {
-    val deadline = System.currentTimeMillis() + timeoutMs
-    while (System.currentTimeMillis() < deadline) {
-        val hit = canonicalEvents(appender)
-            .map(::snapshotOf)
-            .firstOrNull { it["work_unit_kind"] == "scheduled_job" }
-        if (hit != null) return hit
-        Thread.sleep(50)
-    }
-    return null
-}
-
-// The ticker keeps firing on a scheduler thread, appending to the shared `appender.list`
-// (a plain ArrayList) while these reads run on the test thread — iterating the live list
-// races the append and throws ConcurrentModificationException (the CI flake). Snapshot into
-// a fresh list first (ArrayList's copy constructor uses toArray(), which never CME-throws)
-// so every read sees a stable view; the await loop tolerates a momentarily stale snapshot.
-private fun canonicalEvents(appender: ListAppender<ILoggingEvent>): List<ILoggingEvent> =
-    ArrayList(appender.list).filter { it.loggerName == "canonical" }
-
-private fun snapshotOf(event: ILoggingEvent): Map<String, Any> {
-    val args: Array<out Any?> = event.argumentArray ?: emptyArray()
-    val markers: List<Any> = (event.markerList ?: emptyList<Marker>()) + args.filterNotNull()
-    return markers.filterIsInstance<MapEntriesAppendingMarker>()
-        .map { marker ->
-            val mapField = generateSequence<Class<*>>(marker::class.java) { it.superclass }
-                .firstNotNullOfOrNull { cls ->
-                    cls.declaredFields.firstOrNull { f -> Map::class.java.isAssignableFrom(f.type) }
-                } ?: error("no map field on ${marker::class.java}")
-            mapField.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            mapField.get(marker) as Map<String, Any>
-        }
-        .fold(emptyMap()) { acc, m -> acc + m }
 }
