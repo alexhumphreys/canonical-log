@@ -119,6 +119,18 @@ public fun runCanonicalHttpRequest(
  * spec requires manual re-registration after `AsyncContext.dispatch()`); the
  * single-emit guard makes that safe even if a container ends up holding two
  * registrations and firing terminal callbacks twice.
+ *
+ * **Which outcome wins, and what field combinations are legal (todo 036):** the CAS decides
+ * which *callback* wins, and that callback's `Throwable?` drives exactly one
+ * `scope.outcomeFor` -> `scope.enrich` -> `scope.emit` sequence — `enrich` runs once, for one
+ * [io.github.alexhumphreys.canonicallog.Outcome] value. Any legal [WorkUnitAdapter] (this
+ * lifecycle's own [HttpWorkUnitAdapter] included) writes fields for only *one* outcome branch
+ * per `enrich` call, so a torn line — e.g. `cancel_reason=async_timeout` from a winning
+ * `onTimeout` together with `error_class` from a losing `onError` — is structurally
+ * impossible here, not just unlikely: there is no code path that runs two branches into the
+ * same accumulator for one work unit. The legal result is exactly "one of the fired
+ * callbacks' outcomes, whole" — never a mix. Verified under real concurrent racing (not just
+ * sequential orderings) by the barrier hammer in `CanonicalLogAsyncEmitListenerTest`.
  */
 internal class CanonicalLogAsyncEmitListener(
     private val emit: (Throwable?) -> Unit,
