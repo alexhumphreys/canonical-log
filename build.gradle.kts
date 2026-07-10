@@ -68,12 +68,25 @@ subprojects {
             sourceCompatibility = JavaVersion.VERSION_17
             targetCompatibility = JavaVersion.VERSION_17
         }
+        // Test sources get the JVM_17 bytecode target (so class files still load under the
+        // test-jdk17 launcher below) but NOT `-Xjdk-release`/`options.release`: that flag
+        // restricts the *API surface* to ct.sym 17, which would make JDK21+-only test code
+        // (e.g. VirtualThreadTortureTest's virtual-thread APIs, gated to skip at runtime on
+        // JDK <21) fail to *compile* rather than just skip at test time. Main sources keep
+        // the full release=17 restriction — that's the actual shipped-jar safety net.
         tasks.withType<JavaCompile>().configureEach {
             options.release.set(17)
+        }
+        tasks.named<JavaCompile>("compileTestJava").configure {
+            options.release.set(null)
         }
         tasks.withType<KotlinCompile>().configureEach {
             compilerOptions {
                 jvmTarget.set(JvmTarget.JVM_17)
+            }
+        }
+        tasks.named<KotlinCompile>("compileKotlin").configure {
+            compilerOptions {
                 freeCompilerArgs.add("-Xjdk-release=17")
             }
         }
