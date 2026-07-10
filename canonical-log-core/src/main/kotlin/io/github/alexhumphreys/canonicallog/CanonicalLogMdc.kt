@@ -53,6 +53,18 @@ public object CanonicalLogMdc {
         return previous
     }
 
+    /**
+     * Remove [KEY] and return the value it displaced — the no-context counterpart of
+     * [install], for the moments the lifecycle deliberately runs with *no* unit bound
+     * (emit at top level). Pass the return value to [restore], same as [install].
+     */
+    internal fun uninstall(): String? {
+        if (!enabled) return null
+        val previous: String? = MDC.get(KEY)
+        MDC.remove(KEY)
+        return previous
+    }
+
     /** Undo [install]: put back [previous], or remove [KEY] if there was none. */
     @DelicateCanonicalLogApi
     public fun restore(previous: String?) {
