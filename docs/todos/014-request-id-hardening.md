@@ -1,6 +1,12 @@
 # Harden client-supplied X-Request-Id
 
-**Status:** todo · **Modules:** `canonical-log-spring-boot-starter`
+**Status:** todo · **Modules:** `canonical-log-spring-boot-starter` (until 021 lands — see below)
+**Ordering:** prefer doing this **after** 021. That item moves `HttpWorkUnitAdapter` into the
+new `canonical-log-servlet` module, so the hardening then lands framework-neutrally and covers
+the Dropwizard/Jersey integration (022) too — the audience where a hostile header matters just
+as much. Once 021 has landed: the module is `canonical-log-servlet`, and the adapter tests
+this file describes live there (plain servlet fakes, not Spring test utilities). If this is
+implemented first instead, the change simply moves along with 021's extraction.
 
 ## Problem
 

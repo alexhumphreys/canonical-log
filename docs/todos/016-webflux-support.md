@@ -1,6 +1,10 @@
 # WebFlux / reactive entry point
 
 **Status:** todo (larger; demand-driven) · **Modules:** new or extended spring starter
+**Depends on:** 020 — the reactive filter must emit through the shared `CanonicalLineWriter`
+(in core after 020, default bean via `canonical-log-logstash`), not its own hardcoded logstash
+emit. Building this before 020 would recreate the duplicated-sink friction 019 documented for
+the scheduling starter.
 
 ## Problem
 
