@@ -29,7 +29,11 @@ private val nullAdapterProp = object : WorkUnitAdapter<String> {
 
 class AccumulatorPropertyTest : DescribeSpec({
 
-    beforeSpec { PropertyTesting.defaultIterationCount = 200 }
+    beforeSpec {
+        PropertyTesting.defaultIterationCount = 200
+        installCoroutineLeakProbe()
+    }
+    afterSpec { uninstallCoroutineLeakProbe() }
 
     describe("Accumulator concurrency invariants") {
 
@@ -37,6 +41,7 @@ class AccumulatorPropertyTest : DescribeSpec({
             val fieldName = Arb.element("a", "b", "c", "d")
             val incrementBy = Arb.long(1L..1000L)
             val contributions = Arb.list(Arb.pair(fieldName, incrementBy), 0..200)
+            val baselineJobs = captureBaselineJobs()
 
             checkAll(contributions) { ops ->
                 var snap: Map<String, Any> = emptyMap()
@@ -57,6 +62,7 @@ class AccumulatorPropertyTest : DescribeSpec({
                 expected.forEach { (k, v) -> snap[k] shouldBe v }
                 // Negative assertion: no extra fields appear
                 snap.keys shouldBe expected.keys
+                assertNoLeakedCoroutines(baselineJobs)
             }
         }
     }
@@ -64,6 +70,8 @@ class AccumulatorPropertyTest : DescribeSpec({
     describe("Bridge propagation invariants") {
 
         it("every contribution in an arbitrary nested coroutine structure lands in the snapshot") {
+            val baselineJobs = captureBaselineJobs()
+
             checkAll(arbAction(maxDepth = 3)) { plan ->
                 var snap: Map<String, Any> = emptyMap()
                 runBlocking {
@@ -76,6 +84,7 @@ class AccumulatorPropertyTest : DescribeSpec({
 
                 expected.forEach { (k, v) -> snap[k] shouldBe v }
                 snap.keys shouldBe expected.keys
+                assertNoLeakedCoroutines(baselineJobs)
             }
         }
     }

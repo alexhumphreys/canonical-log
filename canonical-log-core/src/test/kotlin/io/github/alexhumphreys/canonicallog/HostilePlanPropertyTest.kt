@@ -69,11 +69,17 @@ class HostilePlanPropertyTest : DescribeSpec({
     // Cached pool: detached tasks park on the latch while joined hop tasks need threads,
     // so a bounded pool could deadlock an iteration.
     val executor: ExecutorService = Executors.newCachedThreadPool()
-    afterSpec { executor.shutdownNow() }
+    beforeSpec { installCoroutineLeakProbe() }
+    afterSpec {
+        executor.shutdownNow()
+        uninstallCoroutineLeakProbe()
+    }
 
     describe("Hostile plan invariants") {
 
         it("must/mustNot/may oracle holds for arbitrary hostile coroutine plans") {
+            val baselineJobs = captureBaselineJobs()
+
             checkAll(200, arbHostilePlan(maxDepth = 3)) { plan ->
                 val lines = Collections.synchronizedList(mutableListOf<Pair<String, Map<String, Any>>>())
                 val outcomes = ConcurrentHashMap<String, Outcome>()
@@ -106,6 +112,7 @@ class HostilePlanPropertyTest : DescribeSpec({
                 }
                 // Join detached work so nothing leaks into the next iteration.
                 env.futures.forEach { it.get(30, TimeUnit.SECONDS) }
+                assertNoLeakedCoroutines(baselineJobs)
 
                 val planThrows = computeThrows(plan)
                 if (planThrows) {

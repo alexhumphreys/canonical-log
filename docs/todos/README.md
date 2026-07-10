@@ -61,7 +61,6 @@ materializes.
 | [035](035-virtual-thread-torture-and-leak-soak.md) | Virtual-thread torture + leak soak | 100k VT units w/ pinning, weak-ref reachability, carrier residue (JDK 21+ only) |
 | [036](036-emit-exactly-once-race-hammer.md) | Emit-exactly-once hammer | Barrier-concurrent terminal callbacks on the async listener + consumer-recipe ack/nack |
 | [039](039-concurrent-emit-output-integrity.md) | Concurrent-emit output integrity | Parse-back every line from concurrent writers; adversarial values; late-increment cutoff |
-| [040](040-suite-honesty-mutation-and-ci-matrix.md) | Suite honesty | Pitest on core, nightly CPUs∈{1,2} CI matrix, DebugProbes leak assertions |
 
 Dependencies: 022 depends on 021 (landed); 023 and 024 are independent (023 and 018 touch the
 same core files — either order, second one rebases). 016's shared-writer dependency (020) has

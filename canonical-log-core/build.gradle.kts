@@ -1,3 +1,7 @@
+plugins {
+    alias(libs.plugins.pitest)
+}
+
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.slf4j.api)
@@ -13,6 +17,22 @@ dependencies {
     // Lincheck model-checks CanonicalLogContext's linearizability (CanonicalLogContextLincheckTest).
     // Runs under plain JUnit — the second deliberate exception to the Kotest-only rule.
     testImplementation(libs.lincheck)
+    // DebugProbes leak assertion in the property specs (todo 040) — asserts no coroutine
+    // outlives a property iteration. Test-scope only.
+    testImplementation(libs.kotlinx.coroutines.debug)
+    pitest(libs.pitest.junit5.plugin)
+}
+
+// Mutation testing (todo 040): manual + nightly only (`./gradlew :canonical-log-core:pitest`).
+// The plugin does not wire `pitest` into `check`/`build`, so the per-PR pipeline is unaffected
+// by its runtime. Scoped to core's own package; starters/adapters are thin wiring and poor
+// mutation targets. See docs/CLAUDE.md's mutation-testing gotcha for the accepted-survivor policy.
+pitest {
+    targetClasses.set(listOf("io.github.alexhumphreys.canonicallog.*"))
+    junit5PluginVersion.set(libs.versions.pitest.junit5.get())
+    mutators.set(listOf("STRONGER"))
+    outputFormats.set(listOf("HTML", "XML"))
+    timestampedReports.set(false)
 }
 
 // Lincheck's model-checking strategy instruments JDK internals; these opens/exports plus
