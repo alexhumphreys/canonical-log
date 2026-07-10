@@ -58,11 +58,8 @@ materializes.
 | [029](029-canonical-log-grpc.md) | `canonical-log-grpc` | Server interceptor entry point + client contributor (demand-driven) |
 | [030](030-canonical-log-sqs.md) | `canonical-log-sqs` | `SqsMessageWorkUnitAdapter` for poll-loop consumers (adapter only; loop stays recipe) |
 | [031](031-canonical-log-jobrunr.md) | `canonical-log-jobrunr` | `JobServerFilter`-based transparent work units per job processing attempt |
-| [033](033-lincheck-accumulator-linearizability.md) | Lincheck accumulator spec | Model-checked linearizability of `CanonicalLogContext`, esp. the increment/put conflict path |
-| [034](034-data-bleed-storm-and-residue-probes.md) | Data-bleed storm + residue probes | Token-isolation negative property over shared executors; barrier probes for pool residue |
 | [035](035-virtual-thread-torture-and-leak-soak.md) | Virtual-thread torture + leak soak | 100k VT units w/ pinning, weak-ref reachability, carrier residue (JDK 21+ only) |
 | [036](036-emit-exactly-once-race-hammer.md) | Emit-exactly-once hammer | Barrier-concurrent terminal callbacks on the async listener + consumer-recipe ack/nack |
-| [037](037-hostile-plan-generator.md) | Hostile plan generator | Throws/nested/detached/bridge/executor-hop nodes + three-way must/mustNot/may oracle |
 | [038](038-lifecycle-reentrancy-fuzzing.md) | Lifecycle reentrancy fuzzing | seed/enrich/emit calling back into the library — pin the matrix, decide undefined cells |
 | [039](039-concurrent-emit-output-integrity.md) | Concurrent-emit output integrity | Parse-back every line from concurrent writers; adversarial values; late-increment cutoff |
 | [040](040-suite-honesty-mutation-and-ci-matrix.md) | Suite honesty | Pitest on core, nightly CPUs∈{1,2} CI matrix, DebugProbes leak assertions |
@@ -77,7 +74,10 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 031 stands alone (reads better after 024, else `@OptIn` like the scheduling starter).
 033–040 are the concurrency-bulletproofing track (2026-07-10): all independent except 035
 (reuses 034's assertion shape), 036 §3 and 040 §2 (optional Lincheck hooks from 033), and
-040 (most valuable last, since it measures the others). Suggested order: 033 → 034 → 037 →
-036 → 039 → 035 → 038 → 040. Each file carries a recommended model (Sonnet 5 for the
+040 (most valuable last, since it measures the others). 033 (Lincheck, landed 2026-07-10 as
+`CanonicalLogContextLincheckTest`), 034 (landed 2026-07-10 as `DataBleedStormTest`), and 037
+(landed 2026-07-10 as `HostilePlanPropertyTest` — hostile nodes + three-way must/mustNot/may
+oracle; no undefined semantics surfaced, every composition matched the documented contracts)
+are done. Suggested order for the rest: 036 → 039 → 035 → 038 → 040. Each file carries a recommended model (Sonnet 5 for the
 mechanically-specified ones: 034/035/036/039/040; Opus 4.8 or Fable for the ones needing
 semantics judgment: 033/037/038). (001–004, which other items depended on, landed 2026-07-02; 006 — MDC `work_unit_id` — landed 2026-07-03 as the `CanonicalLogMdc` mirror, opt-out `canonical-log.http.mdc-enabled`; 007 — field-name constants — landed 2026-07-03 as `CanonicalFields` with adapter-wins precedence documented on `WorkUnitAdapter.enrich`; 008 — OkHttp `enqueue()` — landed 2026-07-03 as tag-first resolution in the interceptor plus the `Request.Builder.withCanonicalContext()` opt-in helper; 009 — second entry point — landed 2026-07-03 as the `@Scheduled` `ReportingJob` sample (scope 1), then reworked 2026-07-04 into the transparent `canonical-log-scheduling-spring-boot-starter` (observation-based, no wrapping), spawning follow-up 019 for the shared-writer friction; 012 — config metadata — landed 2026-07-04 as hand-written `spring-configuration-metadata.json` per starter, guarded by `ConfigurationMetadataTest`; 013 — human-readable message — landed 2026-07-04 as `canonicalLineMessage` in core, shared by both emit sites; 010 — nested work-unit semantics — landed 2026-07-02 as "inner shadows outer" with `parent_work_unit_id` + `work_unit_depth`; 011 — cancellation semantics — landed 2026-07-02 as `Outcome.Cancelled` with `cancelled=true`/`cancel_reason`, CE always rethrown.)
