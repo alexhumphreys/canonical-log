@@ -21,6 +21,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -106,6 +108,58 @@ class MessageConsumerRecipeTest : DescribeSpec({
             // Contribution made between open and ack landed in the snapshot.
             line["processed_count"] shouldBe 1L
             line shouldNotContainKey "error"
+        }
+
+        it("ack/nack racing from a barrier (todo 036): exactly one line, no double-enrich") {
+            val executor = Executors.newFixedThreadPool(3)
+            try {
+                repeat(2000) { iteration ->
+                    val listener = CanonicalMessageListener()
+                    val envelope = Envelope(id = "race-$iteration", source = "events", payload = "ok")
+                    val cause = RuntimeException("nack cause #$iteration")
+
+                    listener.onMessage(envelope)
+                    currentCanonicalContext().shouldBeNull()
+
+                    // Race an ack, a nack, and a redundant second ack -- exactly one of them
+                    // may win the finalize CAS; the rest must be silently dropped.
+                    val barrier = CyclicBarrier(3)
+                    val escaped = mutableListOf<Throwable>()
+                    val actions = listOf(
+                        { listener.onAck(envelope) },
+                        { listener.onNack(envelope, cause) },
+                        { listener.onAck(envelope) },
+                    )
+                    val sizeBefore = listener.lines.size
+                    val futures = actions.map { action ->
+                        executor.submit {
+                            try {
+                                barrier.await()
+                                action()
+                            } catch (t: Throwable) {
+                                synchronized(escaped) { escaped += t }
+                            }
+                        }
+                    }
+                    futures.forEach { it.get() }
+
+                    escaped shouldBe emptyList()
+                    listener.lines.size shouldBe (sizeBefore + 1)
+                    val line = listener.lines.last()
+                    line["messaging_message_id"] shouldBe envelope.id
+                    line["processed_count"] shouldBe 1L
+                    // No double-enrich: enrich runs once per finalize, writing fields for
+                    // exactly one outcome branch -- either the ack's Completed (no error
+                    // markers) or the nack's Threw (error + error_class), never a mix.
+                    val hasErrorMarkers = line.containsKey("error")
+                    if (hasErrorMarkers) {
+                        line["error"] shouldBe true
+                        line["error_class"] shouldBe cause::class.qualifiedName
+                    }
+                }
+            } finally {
+                executor.shutdown()
+            }
         }
     }
 
@@ -199,6 +253,7 @@ private class CanonicalMessageListener(
     }
 
     fun onAck(envelope: Envelope) = finalize(envelope, error = null)
+    fun onNack(envelope: Envelope, cause: Throwable) = finalize(envelope, error = cause)
 
     // Invariants 2 + 3: enrich before emit, each at most once; guard the race with AtomicBoolean.
     private fun finalize(envelope: Envelope, error: Throwable?) {
