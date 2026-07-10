@@ -24,6 +24,17 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * HTTP interceptors), and telemetry must never fail the operation it observes —
      * a throw here would fail the app's actual DB call or replace the real
      * `IOException` of a failed HTTP call.
+     *
+     * **Conflict markers are best-effort diagnostics, not linearizable state.** The
+     * conflict is detected inside `merge`, but the three marker fields are written
+     * *after* `merge` returns, so under concurrency they trail the increment's
+     * linearization point: a snapshot may briefly see the dropped increment's effect
+     * before the markers, racing conflicts may interleave their `_key`/`_type` writes
+     * (each field is last-writer-wins), and the flag can survive on a line whose field
+     * was later `put` back to a healthy Long — the flag records that *some* increment
+     * was dropped, not that the field's final value is wrong. The increment/put field
+     * *values* themselves are linearizable (`CanonicalLogContextLincheckTest` model
+     * checks this and the quiescent marker coherence exhaustively within bounds).
      */
     @JvmOverloads
     public fun increment(key: String, by: Long = 1L) {
@@ -47,6 +58,13 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * Mark this work unit as failed. Sets `error=true` and `error_reason=<reason>`,
      * plus any extra fields the caller supplies. Null-valued extras are dropped,
      * matching [put]. Idempotent — last call wins.
+     *
+     * **Not an atomic pair.** `error` and `error_reason` are two independent [put]s;
+     * each field is individually last-writer-wins. A reader racing the mark (a
+     * concurrent [snapshot]) can observe `error=true` before `error_reason` lands —
+     * no write ordering removes the window, it only mirrors the tear
+     * (`CanonicalLogContextLincheckTest`, weakening 3). Emit-time snapshots are taken
+     * after the work unit completes and always see both fields.
      */
     public fun markFailed(reason: String, vararg extras: Pair<String, Any?>) {
         put(CanonicalFields.ERROR, true)
@@ -65,6 +83,9 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * Mark this work unit as degraded — succeeded but with caveats. Sets
      * `degraded=true` and `degraded_reason=<reason>`, plus any extra fields.
      * Null-valued extras are dropped. Does not set `error`.
+     *
+     * Like [markFailed], the `degraded`/`degraded_reason` pair is **not atomic** —
+     * see the note there.
      */
     public fun markDegraded(reason: String, vararg extras: Pair<String, Any?>) {
         put(CanonicalFields.DEGRADED, true)
@@ -85,6 +106,24 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      * values are primitives, strings, or otherwise immutable, so this is a non-issue —
      * but if a caller stores a mutable value and mutates it after `snapshot()`, the
      * mutation is visible through the snapshot.
+     *
+     * The copy is **weakly consistent**, not point-atomic: it iterates the underlying
+     * `ConcurrentHashMap` while writers may still be active, so a snapshot taken
+     * mid-flight can observe one field of a racing multi-field write (e.g. [markFailed]'s
+     * `error`) and miss another (`error_reason`). Each *individual* field read through
+     * the snapshot is linearizable — never torn, never a lost increment (pinned by
+     * `CanonicalLogContextLincheckTest`). Real usage doesn't rely on more: emit takes
+     * the snapshot after the work unit completes, and contributions racing emit are
+     * documented best-effort cutoff.
      */
-    public fun snapshot(): Map<String, Any> = HashMap(fields)
+    public fun snapshot(): Map<String, Any> {
+        // Not HashMap(fields): the copy constructor consults ConcurrentHashMap.size(),
+        // which can read 0 while entries exist (a racing put has inserted its node but
+        // not yet bumped the count), making HashMap skip iteration and return an empty
+        // copy — losing fields this thread itself already wrote. Iterating never
+        // depends on the count. Lincheck-derived; pinned by CanonicalLogContextLincheckTest.
+        val copy = HashMap<String, Any>()
+        fields.forEach { (k, v) -> copy[k] = v }
+        return copy
+    }
 }
