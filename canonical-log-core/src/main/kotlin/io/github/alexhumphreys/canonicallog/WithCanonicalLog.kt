@@ -26,6 +26,22 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * the WARN is the only record. [Error]s still propagate — see the
  * catch-`Exception`-not-`Error` rationale in [withCanonicalLogBlocking].
  *
+ * **Emit observes a finalized line; don't contribute from a sink.** On every entry point
+ * (blocking, suspend, open/close scope) emit runs with the finalized unit *not* bound:
+ * the threadlocal and MDC mirror hold whatever enclosed the unit — the enclosing unit if
+ * nested, nothing at top level. Consequences, pinned by `LifecycleReentrancyTest`:
+ *  - Ambient writes ([CanonicalLog.put]/`increment`) inside emit never land on the line
+ *    being emitted. At top level they are no-ops; inside a nested unit's emit they land
+ *    on the *enclosing* unit — either way, discouraged.
+ *  - A work unit opened inside emit nests under the enclosing unit (top-level if none),
+ *    never under the finalized one, and emits its own line normally.
+ *  - Logging through an appender that itself contributes canonical fields cannot recurse:
+ *    the appender's contributions no-op because no unit is bound.
+ *  - The [CanonicalLogContext] argument is the *live* context, not a copy: a `ctx.put`
+ *    inside one writer is visible to a later writer in the same emit (and to a snapshot
+ *    that writer takes). Writers must serialize `snapshot()`, never iterate the live map,
+ *    and should not mutate the context — all shipped writers follow this.
+ *
  * Relationship to [CanonicalLineWriter]: [EmitFn] is the raw lambda primitive the lifecycle
  * takes; [CanonicalLineWriter] is the named injectable seam integrations register/provide.
  * Entry points bridge them with `scope.emit(writer::write)`. Neither is deprecated.
@@ -157,6 +173,11 @@ public fun <T, R> withCanonicalLogBlocking(
  * leaves it. Pinned by `NestedWorkUnitTest`; no `CopyableThreadContextElement` is
  * needed for these semantics.
  *
+ * One deliberate exception: during [emit] the enclosing binding is installed even though
+ * the coroutine is still inside `withContext` — aligning with the blocking path's
+ * unbind-then-emit ordering, so emit observes a finalized line on every entry point
+ * (see [EmitFn]; pinned by `LifecycleReentrancyTest`).
+ *
  * Adapter exception handling matches [withCanonicalLogBlocking].
  */
 @OptIn(DelicateCanonicalLogApi::class)
@@ -171,13 +192,24 @@ public suspend fun <T, R> withCanonicalLog(
     // always reflects the *innermost* active unit on this thread (a blocking inner unit
     // opened under a suspend outer is only visible there), and any element in the calling
     // coroutine's context has already been mirrored into the threadlocal at this point.
-    threadLocalContext.get()?.let { parent ->
+    val parent = threadLocalContext.get()
+    if (parent != null) {
         recordNesting(ctx, parent)
     }
     // Seed synchronously on the caller's thread, BEFORE withContext: the ambient state we
     // want to capture (MDC entries, the current span) lives here, and would be gone once the
     // block switches dispatchers. Seed values are defaults the handler/enrich can overwrite.
-    runSeed(adapter, ctx, input)
+    // Bind the unit around the call — the element hasn't installed it yet at this point —
+    // so seed runs bound on every entry point (per its KDoc: a seed that logs sees
+    // `work_unit_id`, and a unit it opens nests under this one).
+    val seedPrevious = bindCurrentCanonicalContext(ctx)
+    val seedPreviousMdc = CanonicalLogMdc.install(ctx)
+    try {
+        runSeed(adapter, ctx, input)
+    } finally {
+        bindCurrentCanonicalContext(seedPrevious)
+        CanonicalLogMdc.restore(seedPreviousMdc)
+    }
     val startNs = System.nanoTime()
     return withContext(CanonicalLogElement(ctx)) {
         // See [withCanonicalLogBlocking] for the rationale: Errors propagate; only
@@ -197,7 +229,7 @@ public suspend fun <T, R> withCanonicalLog(
         }
         val outcome = outcomeOf(blockResult, startNs)
         runEnrich(adapter, ctx, input, outcome)
-        safeEmit(emit, ctx)
+        emitFinalized(emit, ctx, parent)
         blockResult.getOrThrow()
     }
 }
@@ -400,6 +432,28 @@ private fun <T> runEnrich(
             ctx.workUnit.id,
             enrichEx,
         )
+    }
+}
+
+/**
+ * Run [safeEmit] with the *enclosing* unit's binding installed (threadlocal + MDC) instead of
+ * the finalized [ctx] — the suspend path's equivalent of the blocking path's unbind-then-emit
+ * ordering. On the suspend path emit runs inside `withContext`, where the [CanonicalLogElement]
+ * still has [ctx] bound; without this swap, ambient writes inside emit would mutate the map
+ * while a writer serializes it, diverging from [withCanonicalLogBlocking]. [parent] is the
+ * unit that was active when this one opened (`null` at top level), matching what the blocking
+ * path's `unbind()` restores. The element's own per-dispatch restore stays consistent because
+ * the previous binding is put back before the `withContext` block returns.
+ */
+@OptIn(DelicateCanonicalLogApi::class)
+private fun emitFinalized(emit: EmitFn, ctx: CanonicalLogContext, parent: CanonicalLogContext?) {
+    val previous = bindCurrentCanonicalContext(parent)
+    val previousMdc = if (parent != null) CanonicalLogMdc.install(parent) else CanonicalLogMdc.uninstall()
+    try {
+        safeEmit(emit, ctx)
+    } finally {
+        bindCurrentCanonicalContext(previous)
+        CanonicalLogMdc.restore(previousMdc)
     }
 }
 

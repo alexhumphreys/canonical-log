@@ -57,6 +57,12 @@ public interface WorkUnitAdapter<T> {
      * }
      * ```
      *
+     * **Write through [ctx], not [CanonicalLog].** [seed] runs with the unit bound, so
+     * ambient writes ([CanonicalLog.put]) do land — but that's an implementation detail of
+     * when the hook runs, not a contract; `ctx.put` is the supported form. A work unit
+     * opened (and completed) inside [seed] behaves as ordinary nesting: it records this
+     * unit as its parent and emits its own line. Pinned by `LifecycleReentrancyTest`.
+     *
      * **Must not throw** (see the class KDoc). As a backstop a throwing [seed] is swallowed,
      * one WARN is logged, and the failure is recorded on the line via
      * [CanonicalFields.SEED_ERROR] / [CanonicalFields.SEED_ERROR_CLASS] — the block still runs
@@ -81,6 +87,13 @@ public interface WorkUnitAdapter<T> {
      * Follow the same check-before-default pattern in custom adapters for any field a
      * handler is expected to own. Reference the [CanonicalFields] constants rather than
      * string literals so a rename is a compile error.
+     *
+     * **Write through [ctx], not [CanonicalLog].** Whether the unit is still *bound* when
+     * `enrich` runs is entry-point-dependent: the closure entry points run it bound, but
+     * on the open/close-scope path (`CanonicalWorkUnitScope`) it may run after `unbind()`,
+     * on another thread — where ambient writes silently no-op. `ctx.put` always lands.
+     * A work unit opened inside `enrich` nests under this unit only where the binding is
+     * still active. Pinned by `LifecycleReentrancyTest`.
      */
     public fun enrich(ctx: CanonicalLogContext, input: T, outcome: Outcome)
 }
