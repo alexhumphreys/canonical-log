@@ -1,0 +1,55 @@
+name: Nightly
+
+# Background trawl for suite honesty (todo 040): forces preemption-driven interleavings
+# (-XX:ActiveProcessorCount=1) and heavy parallelism (=2) that the per-PR pipeline doesn't
+# exercise, plus Lincheck's deep exploration mode. Failures here should be filed as issues,
+# not block merges — this workflow never gates a PR.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-matrix:
+    name: Test suite (CPUs=${{ matrix.cpus }}, JDK 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        cpus: [1, 2]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # -Ptest.cpus pins -XX:ActiveProcessorCount on every Test task (see root build.gradle.kts);
+      # -Dlincheck.deep runs CanonicalLogContextLincheckTest's deep configuration (todo 033).
+      - name: Test at CPUs=${{ matrix.cpus }}
+        run: >-
+          ./gradlew test -Ptest.cpus=${{ matrix.cpus }}
+          -Dlincheck.deep=true
+          --stacktrace
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-cpus-${{ matrix.cpus }}
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore

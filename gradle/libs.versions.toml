@@ -22,6 +22,8 @@ awssdk = "2.47.0"
 jobrunr = "7.5.1"
 lincheck = "3.6"
 axion-release = "1.21.2"
+pitest-gradle = "1.19.0"
+pitest-junit5 = "1.2.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
@@ -96,6 +98,13 @@ lincheck = { module = "org.jetbrains.lincheck:lincheck", version.ref = "lincheck
 # round-trip property test. Never on any main classpath — core stays dependency-free.
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 
+# Test-scope only: DebugProbes asserts no coroutine leaks out of the property specs (todo 040).
+# Never on any main classpath — core stays slf4j + coroutines only.
+kotlinx-coroutines-debug = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-debug", version.ref = "kotlinx-coroutines" }
+
+# JUnit5 runner for pitest's per-module mutation task (core only, manual + nightly, todo 040).
+pitest-junit5-plugin = { module = "org.pitest:pitest-junit5-plugin", version.ref = "pitest-junit5" }
+
 kotest-runner-junit5 = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
 kotest-assertions-core = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 kotest-property = { module = "io.kotest:kotest-property", version.ref = "kotest" }
@@ -109,3 +118,4 @@ kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotl
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dep-mgmt = { id = "io.spring.dependency-management", version.ref = "spring-dep-mgmt" }
 axion-release = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion-release" }
+pitest = { id = "info.solidsoft.pitest", version.ref = "pitest-gradle" }

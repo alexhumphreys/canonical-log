@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.spring.boot) apply false
     alias(libs.plugins.spring.dep.mgmt) apply false
     alias(libs.plugins.axion.release)
+    alias(libs.plugins.pitest) apply false
 }
 
 // Version is derived from git tags by axion-release. On a tagged commit this is a
@@ -51,6 +52,17 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+    }
+
+    // Nightly CI matrix (todo 040): -XX:ActiveProcessorCount forces the JVM to believe it
+    // has N cores, so ForkJoin/coroutine-IO pools size themselves accordingly and
+    // preemption-driven interleavings that only show up under real contention (=1) or heavy
+    // parallelism get exercised. Plumbed the same way as the existing -Ptest.jdk=17 launcher
+    // override. Left unset in the default per-PR run.
+    providers.gradleProperty("test.cpus").orNull?.let { cpus ->
+        tasks.withType<Test>().configureEach {
+            jvmArgs("-XX:ActiveProcessorCount=$cpus")
+        }
     }
 
     val isLibrary = path.startsWith(":canonical-log-")
