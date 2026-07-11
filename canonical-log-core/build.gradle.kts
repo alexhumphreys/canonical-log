@@ -31,6 +31,8 @@ pitest {
     targetClasses.set(listOf("io.github.alexhumphreys.canonicallog.*"))
     junit5PluginVersion.set(libs.versions.pitest.junit5.get())
     mutators.set(listOf("STRONGER"))
+    // Serial by default; `-PpitestThreads=4` brings a full core run down to ~2 minutes.
+    threads.set(providers.gradleProperty("pitestThreads").map(String::toInt).orElse(1))
     outputFormats.set(listOf("HTML", "XML"))
     timestampedReports.set(false)
 }

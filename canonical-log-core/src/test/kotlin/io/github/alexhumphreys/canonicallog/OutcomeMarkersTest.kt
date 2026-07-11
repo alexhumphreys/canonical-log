@@ -39,9 +39,10 @@ class OutcomeMarkersTest : DescribeSpec({
             ctx.snapshot()["error_reason"] shouldBe "second"
         }
 
-        it("CanonicalLog.markFailed is a no-op without an active context") {
+        it("CanonicalLog.markFailed is a no-op without an active context (both overloads)") {
             threadLocalContext.set(null)
             CanonicalLog.markFailed("noop")
+            CanonicalLog.markFailed("noop", mapOf("k" to 1))
         }
 
         it("CanonicalLog.markFailed routes to the active context") {
@@ -69,6 +70,26 @@ class OutcomeMarkersTest : DescribeSpec({
             snap["degraded_reason"] shouldBe "cache_fallback"
             snap["primary"] shouldBe "search-svc"
             snap.containsKey("error") shouldBe false
+        }
+
+        it("CanonicalLog.markDegraded routes to the active context") {
+            var snap: Map<String, Any> = emptyMap()
+            withCanonicalLogBlocking(
+                adapter = capturingAdapter,
+                input = "wu",
+                emit = { snap = it.snapshot() },
+            ) {
+                CanonicalLog.markDegraded("cache_fallback", "primary" to "search-svc")
+            }
+            snap["degraded"] shouldBe true
+            snap["degraded_reason"] shouldBe "cache_fallback"
+            snap["primary"] shouldBe "search-svc"
+        }
+
+        it("CanonicalLog.markDegraded is a no-op without an active context (both overloads)") {
+            threadLocalContext.set(null)
+            CanonicalLog.markDegraded("noop")
+            CanonicalLog.markDegraded("noop", mapOf("k" to 1))
         }
     }
 

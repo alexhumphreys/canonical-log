@@ -106,5 +106,31 @@ class MdcCorrelationTest : DescribeSpec({
                 CanonicalLogMdc.enabled = true
             }
         }
+
+        it("never touches a foreign work_unit_id: disabled means hands off MDC, not just no install") {
+            CanonicalLogMdc.enabled = false
+            MDC.put("work_unit_id", "someone-elses")
+            try {
+                withCanonicalLogBlocking(mdcAdapter, "wu", { }) {
+                    MDC.get("work_unit_id") shouldBe "someone-elses"
+                }
+                MDC.get("work_unit_id") shouldBe "someone-elses"
+            } finally {
+                CanonicalLogMdc.enabled = true
+            }
+        }
+
+        it("never touches a foreign work_unit_id on the suspend emit path either") {
+            CanonicalLogMdc.enabled = false
+            MDC.put("work_unit_id", "someone-elses")
+            try {
+                runBlocking {
+                    withCanonicalLog(mdcAdapter, "wu", { }) { }
+                }
+                MDC.get("work_unit_id") shouldBe "someone-elses"
+            } finally {
+                CanonicalLogMdc.enabled = true
+            }
+        }
     }
 })

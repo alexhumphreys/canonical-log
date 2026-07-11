@@ -619,5 +619,26 @@ class WithCanonicalLogTest : DescribeSpec({
                 detachLibraryWarnAppender(appender)
             }
         }
+
+        it("an anonymous exception class from seed or enrich records error class \"unknown\"") {
+            val adapter = object : WorkUnitAdapter<String> {
+                override fun describe(input: String) = WorkUnit(input, "test", Instant.now())
+                override fun seed(ctx: CanonicalLogContext, input: String) {
+                    throw object : RuntimeException("anonymous seed failure") {}
+                }
+                override fun enrich(ctx: CanonicalLogContext, input: String, outcome: Outcome) {
+                    throw object : RuntimeException("anonymous enrich failure") {}
+                }
+            }
+            var snap: Map<String, Any> = emptyMap()
+
+            val result = withCanonicalLogBlocking(adapter, "wu", { snap = it.snapshot() }) { "ok" }
+
+            result shouldBe "ok"
+            snap["canonical_log_seed_error"] shouldBe true
+            snap["canonical_log_seed_error_class"] shouldBe "unknown"
+            snap["canonical_log_enrich_error"] shouldBe true
+            snap["canonical_log_enrich_error_class"] shouldBe "unknown"
+        }
     }
 })
