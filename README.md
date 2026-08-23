@@ -1,4 +1,4 @@
-# canonical-log
+# canonical-log - wide events for Kotlin and Spring Boot
 
 [![CI](https://github.com/alexhumphreys/canonical-log/actions/workflows/ci.yml/badge.svg)](https://github.com/alexhumphreys/canonical-log/actions/workflows/ci.yml)
 
