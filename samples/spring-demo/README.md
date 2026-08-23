@@ -49,6 +49,7 @@ Where each field comes from:
 | `work_unit_id`, `work_unit_kind` | `HttpWorkUnitAdapter` |
 | `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total` | `JdbcCanonicalListener` (jdbc starter) |
 | `http_client_request_count`, `http_client_request_duration_ms_total` | `OkHttpCanonicalInterceptor` (okhttp starter) |
+| `retry_attempt_count`, `resilience_rejected`, `circuit_breaker_*` (on `/posts/{id}/flaky`) | `CanonicalResilience4j` (resilience4j starter) |
 | `post_id`, `tag_count`, `comment_count`, `cache_hit` | Handler code via `CanonicalLog.put` |
 
 ## Failure path
@@ -58,6 +59,51 @@ curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/posts/999
 ```
 
 Returns `404`, and the canonical line shows `error=true`, `error_reason=post_not_found`, `post_id=999` — the handler's `CanonicalLog.markFailed("post_not_found", "post_id" to id)` call survives unchanged through the adapter.
+
+## Resilience path (retries and shedding)
+
+`/posts/{id}/flaky` calls an upstream that 500s the first two times it sees a path, through a
+`Retry` wrapped around a `CircuitBreaker`. Nothing in `ResilienceController` mentions a
+canonical field — `canonical-log-resilience4j-spring-boot-starter` attached itself to the
+registry beans at startup.
+
+```sh
+curl -s localhost:8080/posts/1/flaky | jq
+```
+
+The line shows *why* the request was slow, not just that it was:
+
+```json
+{
+  "message": "GET /posts/{id}/flaky 200 168ms",
+  "retry_attempt_count": 2,
+  "retry_wait_duration_ms_total": 100,
+  "circuit_breaker_failure_count": 2,
+  "http_client_request_count": 3,
+  "post_id": 1
+}
+```
+
+Hit a few fresh ids in a row and the breaker (deliberately twitchy in this demo) opens:
+
+```sh
+for i in $(seq 100 110); do curl -s -o /dev/null localhost:8080/posts/$i/flaky; done
+```
+
+```json
+{
+  "message": "GET /posts/{id}/flaky 503 1ms error=upstream_circuit_open",
+  "resilience_rejected": true,
+  "circuit_breaker_rejected_count": 1,
+  "circuit_breaker_open_name": "sample-upstream",
+  "error": true,
+  "error_reason": "upstream_circuit_open"
+}
+```
+
+Note what's **absent**: no `http_client_*` fields at all. The request was shed, not served —
+which is exactly the distinction `resilience_rejected` exists to make, since both a shed and a
+genuinely failed request otherwise read as `error=true`.
 
 ## Non-HTTP entry point (scheduled job)
 

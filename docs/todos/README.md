@@ -75,6 +75,15 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are independent of
 everything; 041 is doc-only and 042's recipe update reads best after 041's rewording (either
 order works, second one rebases the recipe wording).
+043 — `canonical-log-resilience4j` — landed 2026-08-23: `CanonicalResilience4j.register(registry)`
+attaches to each Resilience4j registry via its `EventPublisher` (plus `onEntryAdded`, so
+lazily-created instances are covered), contributing `retry_*`, the four `*_rejected_count`
+families, and the `resilience_rejected` flag; `canonical-log-resilience4j-spring-boot-starter`
+does it automatically for every registry bean. The Spring-side half followed immediately as
+`canonical-log-spring-retry-spring-boot-starter`, covering both Spring Framework 7's built-in
+`@Retryable` (via `MethodRetryEvent`) and classic `org.springframework.retry` (via a
+`RetryListener` bean) and reusing the same `retry_*` constants — see the per-stack
+attempt-counting decision in `docs/CLAUDE.md`.
 033–040 are the concurrency-bulletproofing track (2026-07-10): all independent except 035
 (reuses 034's assertion shape), 036 §3 and 040 §2 (optional Lincheck hooks from 033), and
 040 (most valuable last, since it measures the others). 033 (Lincheck, landed 2026-07-10 as

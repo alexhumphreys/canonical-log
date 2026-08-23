@@ -8,7 +8,7 @@ import io.kotest.matchers.shouldBe
 
 /**
  * Validates the hand-written `spring-configuration-metadata.json` shipped by each starter (todo
- * 012). The sample sees all four starters on its classpath, so one test covers them: every
+ * 012). The sample sees all five starters on its classpath, so one test covers them: every
  * `canonical-log.*` property key that has a `@ConditionalOnProperty` / `@ConfigurationProperties`
  * behind it must be described (types/descriptions present), and every metadata file must be valid
  * JSON. A malformed file silently kills IDE autocomplete, so parsing is the guard.
@@ -17,13 +17,14 @@ class ConfigurationMetadataTest : DescribeSpec({
 
     val mapper = ObjectMapper()
 
-    // Every canonical-log.* key the starters actually gate on, across all four starters.
+    // Every canonical-log.* key the starters actually gate on, across all five starters.
     val expectedKeys = listOf(
         "canonical-log.http.enabled",
         "canonical-log.http.exclude-paths",
         "canonical-log.http.mdc-enabled",
         "canonical-log.jdbc.enabled",
         "canonical-log.okhttp.enabled",
+        "canonical-log.resilience4j.enabled",
         "canonical-log.scheduling.enabled",
     )
 

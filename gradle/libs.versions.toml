@@ -20,6 +20,8 @@ opentelemetry = "1.63.0"
 kafka = "3.9.1"
 awssdk = "2.47.0"
 jobrunr = "7.5.1"
+resilience4j = "2.3.0"
+spring-retry = "2.0.12"
 lincheck = "3.6"
 axion-release = "1.21.2"
 pitest-gradle = "1.19.0"
@@ -78,6 +80,20 @@ awssdk-sqs = { module = "software.amazon.awssdk:sqs", version.ref = "awssdk" }
 # is JobRunr's JSON mapper on the test classpath.
 jobrunr = { module = "org.jobrunr:jobrunr", version.ref = "jobrunr" }
 
+# Resilience4j is a compileOnly floor for canonical-log-resilience4j: the contributor only
+# touches the registries' EventPublisher surface and the event types (stable across 2.x), so
+# the adopter's own Resilience4j version wins at runtime. Core never sees Resilience4j.
+# resilience4j-all aggregates retry/circuitbreaker/bulkhead/ratelimiter/timelimiter — the five
+# concerns the contributor registers against; tests drive real registries in-process.
+resilience4j-all = { module = "io.github.resilience4j:resilience4j-all", version.ref = "resilience4j" }
+resilience4j-spring-boot3 = { module = "io.github.resilience4j:resilience4j-spring-boot3", version.ref = "resilience4j" }
+
+# Classic Spring Retry (org.springframework.retry) is a compileOnly floor for
+# canonical-log-spring-retry: only the RetryListener SPI and RetryContext are touched, so the
+# adopter's own spring-retry wins at runtime. Apps on Spring Framework 7's built-in @Retryable
+# need no dependency at all — that path listens to a spring-context event.
+spring-retry = { module = "org.springframework.retry:spring-retry", version.ref = "spring-retry" }
+
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
@@ -86,6 +102,11 @@ spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-aut
 
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+
+# Test-scope only: Spring's annotation-driven auto-proxying (which both @Retryable flavours
+# rely on) initializes AspectJ's advisor factory, so the weaver has to be on the test classpath
+# even though nothing here writes an aspect. Version comes from the Boot BOM.
+aspectjweaver = { module = "org.aspectj:aspectjweaver" }
 
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 
