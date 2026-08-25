@@ -38,19 +38,23 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      */
     @JvmOverloads
     public fun increment(key: String, by: Long = 1L) {
-        var conflictingType: String? = null
-        fields.merge(key, by) { existing, _ ->
-            if (existing is Long) {
-                existing + by
-            } else {
-                conflictingType = existing::class.qualifiedName ?: "unknown"
-                existing
-            }
-        }
-        if (conflictingType != null) {
+        // The remapping function is the stateless singleton [SumLongs] rather than a lambda,
+        // and the conflict is read off merge's *return* value rather than out of a captured
+        // local. A lambda that captured a `var` would allocate two objects on every increment
+        // (the lambda instance plus a Ref.ObjectRef for the capture) on a path adopters call
+        // many times per work unit; this way the only allocation left is the boxed Long
+        // result, which the Map<String, Any> accumulator makes unavoidable. Pinned by
+        // AllocationBudgetTest.
+        //
+        // merge returns the value now stored under [key]: the summed Long on the happy path,
+        // or — when a non-Long was already there and SumLongs declined to touch it — that
+        // same non-Long. So "not a Long" is exactly the type-conflict signal, and the value
+        // it returns is the conflicting one whose type gets reported.
+        val merged = fields.merge(key, by, SumLongs)
+        if (merged !is Long) {
             put(CanonicalFields.TYPE_CONFLICT, true)
             put(CanonicalFields.TYPE_CONFLICT_KEY, key)
-            put(CanonicalFields.TYPE_CONFLICT_TYPE, conflictingType)
+            put(CanonicalFields.TYPE_CONFLICT_TYPE, merged?.let { it::class.qualifiedName } ?: "unknown")
         }
     }
 
@@ -126,4 +130,14 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
         fields.forEach { (k, v) -> copy[k] = v }
         return copy
     }
+}
+
+/**
+ * `ConcurrentHashMap.merge` remapping function for [CanonicalLogContext.increment]: sums two
+ * Longs, and leaves a non-Long value untouched so the caller can detect the type conflict from
+ * the returned value. Deliberately a stateless singleton — see the comment in `increment`.
+ */
+private object SumLongs : java.util.function.BiFunction<Any, Any, Any> {
+    override fun apply(existing: Any, incoming: Any): Any =
+        if (existing is Long && incoming is Long) existing + incoming else existing
 }
