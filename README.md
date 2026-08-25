@@ -138,6 +138,8 @@ An unhandled exception. The **presence of `error_class`** is the signal of an un
 | HTTP adapter (Spring starter / Dropwizard bundle) | `http_request_method`, `url_path`, `http_route`, `http_response_status_code`, `http_request_duration_ms`, `work_unit_id`, `work_unit_kind`, error/cancellation markers |
 | [JDBC contributor](canonical-log-jdbc/README.md) | `db_query_count`, `db_execution_count`, `db_execution_duration_ms_total`, `db_slow_execution_count`, `db_execution_error_count` |
 | [OkHttp contributor](canonical-log-okhttp/README.md) | `http_client_request_count`, `http_client_request_duration_ms_total`, `http_client_4xx_count`, `http_client_5xx_count`, `http_client_error_count` |
+| [Spring retry contributors](canonical-log-spring-retry-spring-boot-starter/README.md) | `retry_attempt_count`, `retry_exhausted_count` (same constants — the field names the concept, not the library) |
+| [Resilience4j contributor](canonical-log-resilience4j/README.md) | `retry_attempt_count`, `retry_exhausted_count`, `retry_wait_duration_ms_total`, `circuit_breaker_*`, `bulkhead_rejected_count`, `rate_limiter_rejected_count`, `time_limiter_timeout_count`, `resilience_rejected` |
 | [Trace seeding adapters](canonical-log-tracing-otel/README.md) (opt-in) | `trace_id`, `span_id` |
 | Handler code via `CanonicalLog.put` / `.markFailed` / `.markDegraded` | `post_id`, `cache_hit`, `error_reason` — anything you want |
 | Logstash encoder `customFields` | `@timestamp`, `service_name`, `environment` |
@@ -148,6 +150,7 @@ An unhandled exception. The **presence of `error_class`** is the signal of an un
 
 - `error="true"` matches both failure shapes; add `_exists_:error_class` for thrown, `NOT _exists_:error_class` for marked business failures. Booleans are omitted when false — query `error="true"`, never `error!="false"`.
 - `message` is a human summary for skimming; every value in it is also a structured field. Never parse it.
+- `resilience_rejected="true"` separates "we refused to call" from "the call failed" — both otherwise land as `error="true"`. A shed request also carries no `http_client_*` fields, because the call never left the process.
 - `work_unit_id` is mirrored into MDC for the duration of the work unit, so every ordinary debug log line carries the same id as the canonical line — jumping between them is one equality query.
 
 ## Outcome model
@@ -191,6 +194,8 @@ Each module README has the wiring snippet, the fields it writes, and its gotchas
 | [`canonical-log-kafka`](canonical-log-kafka/README.md) | consumer adapter + producer decorator |
 | [`canonical-log-sqs`](canonical-log-sqs/README.md) | SQS message adapter |
 | [`canonical-log-jobrunr`](canonical-log-jobrunr/README.md) | JobRunr background jobs |
+| [`canonical-log-resilience4j`](canonical-log-resilience4j/README.md) / [starter](canonical-log-resilience4j-spring-boot-starter/README.md) | retry / circuit-breaker / bulkhead contributor |
+| [`canonical-log-spring-retry-spring-boot-starter`](canonical-log-spring-retry-spring-boot-starter/README.md) | `retry_*` for Spring's built-in and classic `@Retryable` |
 | [`canonical-log-test`](canonical-log-test/README.md) | adopter test kit |
 
 ## Sample

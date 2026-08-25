@@ -146,6 +146,18 @@ public object CanonicalFields {
     /** `String` — fully-qualified class name of the exception a throwing `seed` raised. */
     public const val SEED_ERROR_CLASS: String = "canonical_log_seed_error_class"
 
+    /**
+     * `Boolean` — set when a *contributor* (an interceptor/listener/event consumer that adds
+     * fields from inside the app's critical path) threw while contributing. Like the
+     * enrich/seed guards, the throw is swallowed and recorded here: telemetry must never fail
+     * the operation it observes, and a contributor sits inside a live DB call, HTTP call, or
+     * resilience decoration. Written by the contributor modules, never by core itself.
+     */
+    public const val CONTRIBUTOR_ERROR: String = "canonical_log_contributor_error"
+
+    /** `String` — fully-qualified class name of the exception a throwing contributor raised. */
+    public const val CONTRIBUTOR_ERROR_CLASS: String = "canonical_log_contributor_error_class"
+
     // --- Trace correlation (written by seeding adapters, not by core itself) ---
 
     /**
@@ -251,4 +263,73 @@ public object CanonicalFields {
      * Only acks that land before the line is emitted contribute (snapshot-at-emit cutoff).
      */
     public const val KAFKA_PRODUCE_DURATION_MS_TOTAL: String = "kafka_produce_duration_ms_total"
+
+    // --- Resilience (canonical-log-resilience4j: CanonicalResilience4j) ---
+    //
+    // Per-work-unit attribution for the resilience layer wrapped around outbound calls:
+    // retries and *rejections*. Resilience4j's own Micrometer metrics answer the global
+    // question ("how often is this breaker open?"); these answer the per-request one
+    // ("did *this* unit retry, or get shed?").
+    //
+    // The counters are deliberately instance-name-free. A name belongs in a field *value*
+    // (see [CIRCUIT_BREAKER_OPEN_NAME]), never in a field name — `retry_attempt_count` stays
+    // one queryable field however many Retry instances an app declares. Per-name breakdown is
+    // an explicit non-goal here; that's what the Micrometer tags are for.
+
+    /**
+     * `Long` — retried attempts within this work unit: one per Resilience4j `on_retry` event,
+     * i.e. **excluding the initial call**. Absent (not zero) when nothing retried, so the
+     * "did this unit retry at all?" query is a presence check. A unit whose retry eventually
+     * succeeded still carries this — that's the point: it separates "3.2s because slow" from
+     * "3.2s because we tried three times".
+     */
+    public const val RETRY_ATTEMPT_COUNT: String = "retry_attempt_count"
+
+    /** `Long` — retries that gave up and rethrew (one per exhausted Retry decoration). */
+    public const val RETRY_EXHAUSTED_COUNT: String = "retry_exhausted_count"
+
+    /**
+     * `Long` — total backoff wait attributable to this unit's retries, integer ms, summed from
+     * the retry events' wait interval. Pair with [RETRY_ATTEMPT_COUNT] to split a slow unit's
+     * time into "waiting to retry" versus "actually calling".
+     */
+    public const val RETRY_WAIT_DURATION_MS_TOTAL: String = "retry_wait_duration_ms_total"
+
+    /**
+     * `Long` — calls an open circuit breaker refused (`CallNotPermittedException`). The call was
+     * **never attempted**, so it contributes no `http_client_*` fields — a rejected unit shows
+     * the rejection and no outbound call, which is exactly how to tell shedding from failure.
+     */
+    public const val CIRCUIT_BREAKER_REJECTED_COUNT: String = "circuit_breaker_rejected_count"
+
+    /** `Long` — calls the breaker recorded as failures (attempted, and failed). */
+    public const val CIRCUIT_BREAKER_FAILURE_COUNT: String = "circuit_breaker_failure_count"
+
+    /**
+     * `String` — the name of the circuit-breaker instance that rejected a call in this unit
+     * (`"payments-api"`). Last rejection wins. Bounded by construction: breaker names are
+     * declared configuration, not request data. Only written on rejection — a breaker that
+     * merely recorded a failure doesn't name itself.
+     */
+    public const val CIRCUIT_BREAKER_OPEN_NAME: String = "circuit_breaker_open_name"
+
+    /** `Long` — calls a full bulkhead (semaphore or thread-pool) refused. */
+    public const val BULKHEAD_REJECTED_COUNT: String = "bulkhead_rejected_count"
+
+    /** `Long` — calls a rate limiter did not permit. */
+    public const val RATE_LIMITER_REJECTED_COUNT: String = "rate_limiter_rejected_count"
+
+    /** `Long` — calls a time limiter timed out. */
+    public const val TIME_LIMITER_TIMEOUT_COUNT: String = "time_limiter_timeout_count"
+
+    /**
+     * `Boolean` — set to `true` when *any* resilience rejection or timeout hit this unit
+     * (breaker open, bulkhead full, rate limiter exhausted, time limiter fired). Omitted (not
+     * `false`) otherwise, like every other boolean here.
+     *
+     * This is the field to lead a dashboard with: today a shed request and a genuinely failed
+     * one both surface as `error=true`, which conflates "the upstream broke" with "we refused
+     * to call it". `resilience_rejected="true"` separates them in one predicate.
+     */
+    public const val RESILIENCE_REJECTED: String = "resilience_rejected"
 }

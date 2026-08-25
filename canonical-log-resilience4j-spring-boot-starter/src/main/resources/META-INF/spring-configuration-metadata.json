@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.resilience4j.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the Resilience4j canonical-log contributor is auto-configured (attaching to every Retry, CircuitBreaker, Bulkhead, ThreadPoolBulkhead, RateLimiter and TimeLimiter registry bean in the context, including instances those registries create later). Active when absent (matchIfMissing); set false to disable.",
+      "defaultValue": true
+    }
+  ]
+}

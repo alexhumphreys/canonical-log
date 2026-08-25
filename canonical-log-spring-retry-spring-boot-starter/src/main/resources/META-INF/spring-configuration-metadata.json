@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "canonical-log.spring-retry.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether the Spring retry canonical-log contributors are auto-configured: a listener for Spring Framework's built-in @Retryable, and — when classic org.springframework.retry is on the classpath — a RetryListener bean that @EnableRetry applies to every @Retryable method. Active when absent (matchIfMissing); set false to disable.",
+      "defaultValue": true
+    }
+  ]
+}

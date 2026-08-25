@@ -88,6 +88,40 @@ vocabulary. (The `messaging_*` fields are deliberate string literals, not consta
 | `kafka_produce_duration_ms_total` | Long | submit → ack; acks landing after emit are cut off |
 | `kafka_produce_error_count` | Long | acks that completed exceptionally |
 
+## Resilience (`canonical-log-resilience4j`, `canonical-log-spring-retry-spring-boot-starter`)
+
+Per-work-unit attribution for the Resilience4j layer around outbound calls. Resilience4j's own
+Micrometer metrics answer the global question ("how often is this breaker open?"); these answer
+the per-request one ("did *this* request retry, or get shed?"). Run both.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `retry_attempt_count` | Long | retried attempts only — the initial call isn't counted; also written by the Spring retry contributors |
+| `retry_exhausted_count` | Long | the retry gave up and rethrew; also written by the Spring retry contributors |
+| `retry_wait_duration_ms_total` | Long | backoff waited, summed; splits "slow" into waiting vs calling. Resilience4j only — neither Spring retry stack exposes the interval to its listener |
+| `circuit_breaker_rejected_count` | Long | calls an open breaker refused (never attempted) |
+| `circuit_breaker_failure_count` | Long | calls the breaker recorded as failures (attempted, failed) |
+| `circuit_breaker_open_name` | String | which breaker shed the call; last rejection wins |
+| `bulkhead_rejected_count` | Long | semaphore or thread-pool bulkhead was full |
+| `rate_limiter_rejected_count` | Long | the limiter did not permit the call |
+| `time_limiter_timeout_count` | Long | the time limiter fired |
+| `resilience_rejected` | Boolean | **any** of the above rejections/timeouts hit this unit |
+
+`resilience_rejected="true"` is the field to lead a dashboard with: it separates "we refused to
+call" from "the call failed", which otherwise both surface as `error="true"`. A shed unit also
+carries **no** `http_client_*` fields — the call never left the process.
+
+The counters are deliberately instance-name-free: a name belongs in a field *value*
+(`circuit_breaker_open_name`), never in a field name, or every new `Retry` mints new columns.
+Per-name breakdown of the counters is a non-goal here — that's what the Micrometer tags are for.
+
+The two `retry_*` fields are deliberately shared with
+`canonical-log-spring-retry-spring-boot-starter`, which writes them for Spring Framework's
+built-in `@Retryable` and for classic Spring Retry: the constants name the *concept*, so one
+query answers "did this request retry?" whichever library did the retrying. The rejection
+families below `retry_*` are Resilience4j-only — Spring's stacks have no equivalent seam
+(`@ConcurrencyLimit` throws without publishing anything observable).
+
 ## Jobs (`canonical-log-jobrunr`, scheduling starter)
 
 | Field | Type | Written by | Notes |
@@ -136,6 +170,8 @@ Telemetry never fails the operation it observes; failures are recorded on the li
 | `canonical_log_enrich_error_class` | String | FQCN of the enrich exception |
 | `canonical_log_seed_error` | Boolean | `WorkUnitAdapter.seed` threw (swallowed + WARN'd) |
 | `canonical_log_seed_error_class` | String | FQCN of the seed exception |
+| `canonical_log_contributor_error` | Boolean | a contributor (interceptor/listener/event consumer) threw while contributing (swallowed) |
+| `canonical_log_contributor_error_class` | String | FQCN of the contributor exception |
 
 ## Not written by the library
 
