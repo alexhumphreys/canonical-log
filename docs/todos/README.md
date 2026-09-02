@@ -63,6 +63,10 @@ materializes.
 | [039](039-concurrent-emit-output-integrity.md) | Concurrent-emit output integrity | Parse-back every line from concurrent writers; adversarial values; late-increment cutoff |
 | [041](041-kafka-adapter-hidden-record-docs.md) | Kafka hidden-record docs | Doc-only: KDoc + recipe pointer for frameworks that hide `ConsumerRecord` |
 | [042](042-workunitadapter-of-factory.md) | `WorkUnitAdapter.of` | Lambda factory for one-off adapters (companion object + `of(describe, seed, enrich)`) |
+| [044](044-strict-mode-noop-contribution-detection.md) | Strict-mode no-op detection | Opt-in test/CI hook that makes silently-dropped ambient contributions loud |
+| [045](045-workunitscope-idempotence-guards.md) | Scope idempotence guards | CAS-guard `emit`/`unbind` inside `CanonicalWorkUnitScope` (WARN, not corrupt) |
+| [046](046-context-read-accessor.md) | `ctx.get`/`contains` | Single-key reads so check-before-default stops snapshotting the whole map |
+| [047](047-message-field-constant.md) | `CanonicalFields.MESSAGE` | Constant for the handler-ownable `message` key (JSON writer literal today) |
 
 Dependencies: 022 depends on 021 (landed); 023 and 024 are independent (023 and 018 touch the
 same core files — either order, second one rebases). 016's shared-writer dependency (020) has
@@ -75,6 +79,12 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are independent of
 everything; 041 is doc-only and 042's recipe update reads best after 041's rewording (either
 order works, second one rebases the recipe wording).
+044–047 (from the 2026-09-02 design-explainer gap review — see PR #28) are all independent of
+each other and of everything else; 046 and 047 are small, 044 has an Option A/B decision, 045
+touches the graduated open/close API. Each carries a note to keep `docs/design-explainer.md`
+in sync if the implementation changes something that document describes; the reactive/
+CompletableFuture-chain propagation gap the same review re-surfaced is already tracked as
+[016](016-webflux-support.md).
 043 — `canonical-log-resilience4j` — landed 2026-08-23: `CanonicalResilience4j.register(registry)`
 attaches to each Resilience4j registry via its `EventPublisher` (plus `onEntryAdded`, so
 lazily-created instances are covered), contributing `retry_*`, the four `*_rejected_count`
