@@ -79,7 +79,7 @@ to X, thread B sets it to Y; each reads back its own value. The whole implicit-c
 tradition on the JVM (transactions, security contexts, SLF4J's MDC) is built on it.
 
 The library's entire binding state is one field
-([`ContextPropagation.kt:7`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/CanonicalLogElement.kt)):
+([`CanonicalLogElement.kt:7`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/CanonicalLogElement.kt)):
 
 ```kotlin
 internal val threadLocalContext: ThreadLocal<CanonicalLogContext?> = ThreadLocal()
