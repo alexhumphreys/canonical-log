@@ -67,6 +67,7 @@ materializes.
 | [045](045-workunitscope-idempotence-guards.md) | Scope idempotence guards | CAS-guard `emit`/`unbind` inside `CanonicalWorkUnitScope` (WARN, not corrupt) |
 | [046](046-context-read-accessor.md) | `ctx.get`/`contains` | Single-key reads so check-before-default stops snapshotting the whole map |
 | [047](047-message-field-constant.md) | `CanonicalFields.MESSAGE` | Constant for the handler-ownable `message` key (JSON writer literal today) |
+| [048](048-contributor-contract-harness.md) | Contributor contract harness | Reusable no-throw/no-leak/type-convention contract every contributor runs (promotes the deferred `ContributorContractTest` + negative-assertion helpers) |
 
 Dependencies: 022 depends on 021 (landed); 023 and 024 are independent (023 and 018 touch the
 same core files — either order, second one rebases). 016's shared-writer dependency (020) has
@@ -79,9 +80,10 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are independent of
 everything; 041 is doc-only and 042's recipe update reads best after 041's rewording (either
 order works, second one rebases the recipe wording).
-044–047 (from the 2026-09-02 design-explainer gap review — see PR #28) are all independent of
+044–048 (from the 2026-09-02 design-explainer gap review — see PR #28) are all independent of
 each other and of everything else; 046 and 047 are small, 044 has an Option A/B decision, 045
-touches the graduated open/close API. Each carries a note to keep `docs/design-explainer.md`
+touches the graduated open/close API, and 048 reads best after 044 (its harness can reuse a
+strict-mode hook) but doesn't depend on it. Each carries a note to keep `docs/design-explainer.md`
 in sync if the implementation changes something that document describes; the reactive/
 CompletableFuture-chain propagation gap the same review re-surfaced is already tracked as
 [016](016-webflux-support.md).
