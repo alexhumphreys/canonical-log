@@ -205,22 +205,84 @@ falls out of scope structure, not bookkeeping.
 
 ### 2.4 The seams: where the two worlds meet
 
-Real applications cross the blocking/suspend boundary constantly, and each direction has
-a helper:
+Real applications cross the blocking/suspend boundary constantly. Both seams below are
+the same underlying problem — *the accumulator's address is stored per-thread, and your
+code is about to run on a different thread* — but the hand-off mechanics differ, so each
+gets its own helper.
 
-- **Blocking → suspend**: a servlet filter opened the unit (ThreadLocal set), and your
-  code enters coroutine-land. `withCanonicalCoroutineContext { ... }`
-  ([`WithCanonicalLog.kt:253`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/WithCanonicalLog.kt))
-  reads the ThreadLocal and lifts it into a `CanonicalLogElement`, so subsequent
-  dispatcher switches propagate it. It does *not* open a new unit — lifecycle stays with
-  the filter.
-- **Anything → plain thread pool**: `ExecutorService.submit`, `@Async`,
-  `CompletableFuture.supplyAsync` — the coroutine element can't help because no coroutine
-  crosses the gap. The `propagatingCanonicalContext()` wrappers
-  ([`ContextPropagation.kt`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/ContextPropagation.kt))
-  capture the context on the *submitting* thread and bind/restore it around the task on
-  the worker thread. Crucially, **the work unit does not wait for these tasks** — if you
-  need their contributions on the line, join them before your block returns.
+**Blocking → suspend.** In a Spring MVC app the unit is opened by the servlet filter —
+blocking code — which sets the ThreadLocal on the request thread, say `tomcat-1`. The
+element from 2.3 keeps the ThreadLocal correct across dispatches, but only if a
+`CanonicalLogElement` is *in the coroutine's context* — and normally `withCanonicalLog`
+puts it there. Here the unit came from the blocking entry point, which only sets the
+ThreadLocal; nobody created an element. So the moment your coroutine hops dispatchers,
+the trail goes cold — the context exists, but it's only findable via `tomcat-1`'s
+ThreadLocal, and you're not on `tomcat-1` anymore:
+
+```kotlin
+fun handle() = runBlocking {          // still on tomcat-1; filter's ThreadLocal is set
+    CanonicalLog.put("a", 1)          // ✅ lands
+    withContext(Dispatchers.IO) {
+        CanonicalLog.put("b", 2)      // ❌ IO-pool thread — its ThreadLocal is empty
+    }
+}
+```
+
+`withCanonicalCoroutineContext { ... }`
+([`WithCanonicalLog.kt:253`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/WithCanonicalLog.kt))
+is the adapter for exactly this moment. It reads the ThreadLocal on the current thread,
+wraps the context it finds in a `CanonicalLogElement`, and runs your block via
+`withContext(element)` — converting the context from *thread-attached* to
+*coroutine-attached* form, after which dispatcher switches inside the block propagate it.
+It does **not** open a new unit: no new accumulator, no seed/enrich, no emit — the filter
+opened the unit and the filter closes it; this helper only makes the existing unit
+reachable from coroutine-land. If no unit is active, the block just runs and
+contributions are the usual silent no-ops.
+
+**Anything → plain thread pool.** `ExecutorService.submit`, Spring `@Async`,
+`CompletableFuture.supplyAsync(…, executor)` — under the hood all of these are "hand a
+task to a pool," and the coroutine cure doesn't apply: the element works because the
+*coroutine runtime* invokes its callbacks on each dispatch, and a pool submission is not
+a coroutine dispatch. The `Runnable` gets picked up cold by a worker thread that knows
+nothing about your request. The fix is manual, which is why it's a wrapper you apply:
+
+```kotlin
+executor.submit(Runnable {
+    CanonicalLog.increment("things_processed")   // ✅ with the wrapper; ❌ without
+}.propagatingCanonicalContext())
+```
+
+The wrapper ([`ContextPropagation.kt`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/ContextPropagation.kt))
+has two halves on two threads: **at wrap time, on the submitting thread**, it reads the
+ThreadLocal and stashes the context reference inside the wrapper object — it must happen
+here, because the submitting thread is the only one that knows which request the task
+belongs to; **at run time, on the worker thread**, it binds the captured context (and the
+MDC mirror) around the task with the usual save-and-restore-in-`finally` discipline, so
+the pool thread is left clean. The context reference physically rides along inside the
+wrapped `Runnable` from one thread to the other — that's the whole trick.
+
+Crucially, **the wrapper solves reachability, not timing**: the work unit emits when your
+block returns and won't wait for a task it doesn't know about. The failure mode looks
+like this:
+
+```
+tomcat-1:  open unit ── submit task ── block returns ── EMIT (snapshot taken) ── line written
+pool-7:                    └───────────── task runs ── increment ──→ lands in the accumulator
+                                                                     …after the snapshot. Too late.
+```
+
+Nothing crashes, nothing warns — the increment writes into a map that has already been
+photographed, and the field is simply absent from the line (the "snapshot cutoff",
+revisited in 3.2). If a task's contribution must appear on the line, join it —
+`future.get()`, a latch — before the block returns; if it's genuinely fire-and-forget,
+its fields are best-effort by definition.
+
+One mental model for both seams: the ThreadLocal is a signpost that exists on one thread
+at a time. Coroutine dispatches move the signpost *automatically* — if the element is
+installed, which the first seam is about. Pool hand-offs move nothing automatically, so
+you smuggle the reference inside the task and plant the signpost yourself on arrival.
+And in both worlds, *reaching* the accumulator and *the unit waiting for you* are
+separate questions — the unit only ever waits for its own structured children.
 
 ### 2.5 MDC: the second thread-local, mirrored
 
