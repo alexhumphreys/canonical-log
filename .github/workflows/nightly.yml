@@ -33,7 +33,7 @@ jobs:
           java-version: '25'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # -Ptest.cpus pins -XX:ActiveProcessorCount on every Test task (see root build.gradle.kts);
       # -Dlincheck.deep runs CanonicalLogContextLincheckTest's deep configuration (todo 033).
