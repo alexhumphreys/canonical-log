@@ -20,6 +20,11 @@ possibly weeks later. There is no opt-in way to make them loud in tests/CI.
 `canonical-log-test` has `testCanonicalLogContext()` / `withBoundCanonicalContext()` for
 positive cases but nothing that detects the *absence* of a binding at contribution time.
 
+Scope note: this item is about contributions that find **no bound unit**. The sibling case
+— a contributor holding a *captured* context reference and writing into an already-emitted
+map, where the write succeeds and is still lost — is [049](049-post-emit-write-detection.md).
+If Option A lands, 049 should reuse its hook rather than add a second diagnostic surface.
+
 ## Design (decision to make at implementation time)
 
 Two candidate shapes — pick one, or ship both if the core hook is trivial:
