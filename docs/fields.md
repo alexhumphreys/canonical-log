@@ -173,8 +173,18 @@ Telemetry never fails the operation it observes; failures are recorded on the li
 | `canonical_log_contributor_error` | Boolean | a contributor (interceptor/listener/event consumer) threw while contributing (swallowed) |
 | `canonical_log_contributor_error_class` | String | FQCN of the contributor exception |
 
+## Line composition
+
+| Field | Type | Written by | When |
+| --- | --- | --- | --- |
+| `message` | String | `JsonCanonicalLineWriter` (folded into the object) | only when the snapshot doesn't already carry it — a handler-set value wins |
+
+The human summary is composed by core's `canonicalLineMessage`; every value in it is also a
+structured field — never parse it. The MDC and Logstash writers keep the summary as the slf4j
+event *message* instead and write no `message` field. A handler that wants to own the summary
+`put`s `CanonicalFields.MESSAGE` itself.
+
 ## Not written by the library
 
 `@timestamp`, `service_name`, `environment` come from the logging encoder config (e.g.
-logstash `customFields` — see the sample). `message` is a human summary composed by core's
-`canonicalLineMessage`; every value in it is also a structured field — never parse it.
+logstash `customFields` — see the sample).

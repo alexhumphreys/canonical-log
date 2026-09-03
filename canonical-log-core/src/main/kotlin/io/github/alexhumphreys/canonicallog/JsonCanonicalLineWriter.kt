@@ -108,7 +108,7 @@ private fun appendJsonString(sb: StringBuilder, value: CharSequence) {
  * The [Logstash][io.github.alexhumphreys.canonicallog.logstash.LogstashCanonicalLineWriter] and
  * [MDC][MdcCanonicalLineWriter] writers keep the human summary as the log *message* and attach
  * fields alongside. Here the JSON **is** the message, so the human summary from
- * [canonicalLineMessage] is folded **inside** the object under a `"message"` key to keep the line
+ * [canonicalLineMessage] is folded **inside** the object under [CanonicalFields.MESSAGE] to keep the line
  * skimmable — unless the snapshot already carries a `message` field (handler-owned; not clobbered,
  * mirroring the check-before-default pattern used for `error_reason`).
  *
@@ -127,11 +127,11 @@ public class JsonCanonicalLineWriter(
     override fun write(context: CanonicalLogContext): Unit = emitLine(canonicalLineJson(withMessage(context.snapshot())))
 }
 
-/** Fold the human summary in under `"message"` unless the handler already owns that key. */
+/** Fold the human summary in under [CanonicalFields.MESSAGE] unless the handler already owns that key. */
 private fun withMessage(snapshot: Map<String, Any>): Map<String, Any> {
-    if (snapshot.containsKey("message")) return snapshot
+    if (snapshot.containsKey(CanonicalFields.MESSAGE)) return snapshot
     val enriched = HashMap<String, Any>(snapshot)
-    enriched["message"] = canonicalLineMessage(snapshot)
+    enriched[CanonicalFields.MESSAGE] = canonicalLineMessage(snapshot)
     return enriched
 }
 

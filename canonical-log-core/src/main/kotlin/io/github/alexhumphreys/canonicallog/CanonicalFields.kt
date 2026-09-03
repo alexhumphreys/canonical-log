@@ -67,6 +67,16 @@ public object CanonicalFields {
      */
     public const val CANCEL_REASON: String = "cancel_reason"
 
+    // --- Line composition ---
+
+    /**
+     * `String` — the human-readable summary. Written by [JsonCanonicalLineWriter] (folded into
+     * the JSON object) when absent; a handler-set value wins — the same check-before-default
+     * pattern as [ERROR_REASON]. The MDC/Logstash writers keep the summary as the slf4j event
+     * message instead and do not write this field.
+     */
+    public const val MESSAGE: String = "message"
+
     // --- Work-unit identity ---
 
     /**

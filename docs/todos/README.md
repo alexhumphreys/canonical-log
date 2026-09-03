@@ -66,7 +66,6 @@ materializes.
 | [044](044-strict-mode-noop-contribution-detection.md) | Strict-mode no-op detection | Opt-in test/CI hook that makes silently-dropped ambient contributions loud |
 | [045](045-workunitscope-idempotence-guards.md) | Scope idempotence guards | CAS-guard `emit`/`unbind` inside `CanonicalWorkUnitScope` (WARN, not corrupt) |
 | [046](046-context-read-accessor.md) | `ctx.get`/`contains` | Single-key reads so check-before-default stops snapshotting the whole map |
-| [047](047-message-field-constant.md) | `CanonicalFields.MESSAGE` | Constant for the handler-ownable `message` key (JSON writer literal today) |
 | [048](048-contributor-contract-harness.md) | Contributor contract harness | Reusable no-throw/no-leak/type-convention contract every contributor runs (promotes the deferred `ContributorContractTest` + negative-assertion helpers) |
 | [049](049-post-emit-write-detection.md) | Late-write detection | Count + WARN on contributions that arrive after emit through a captured context reference |
 
@@ -81,15 +80,24 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are independent of
 everything; 041 is doc-only and 042's recipe update reads best after 041's rewording (either
 order works, second one rebases the recipe wording).
-044–049 (from the design-explainer gap reviews — see PR #28) are all independent of
-each other and of everything else; 046 and 047 are small, 044 has an Option A/B decision, 045
-touches the graduated open/close API, 049 covers the half of the silent-misuse problem 044
-leaves out (writes through a *captured* reference, where a unit is still reachable) and
-should reuse 044's hook if that ships Option A, and 048 reads best after 044 (its harness can reuse a
-strict-mode hook) but doesn't depend on it. Each carries a note to keep `docs/design-explainer.md`
-in sync if the implementation changes something that document describes; the reactive/
-CompletableFuture-chain propagation gap the same review re-surfaced is already tracked as
-[016](016-webflux-support.md).
+047 (from the design-explainer gap reviews — see PR #28) **landed 2026-09-03** as
+`CanonicalFields.MESSAGE`, with §4.6 of `docs/design-explainer.md` updated to match.
+The rest of that batch is still open, and independent of each other and of everything else:
+044 has an Option A/B decision, 045 touches the graduated open/close API, 046 is small, 049 covers the half
+of the silent-misuse problem 044 leaves out (writes through a *captured* reference, where a
+unit is still reachable) and should reuse 044's hook if that ships Option A, and 048 reads best
+after 044 (its harness can reuse a strict-mode hook) but doesn't depend on it. Each carries a
+note to keep `docs/design-explainer.md` in sync if the implementation changes something that
+document describes; the reactive/CompletableFuture-chain propagation gap the same review
+re-surfaced is already tracked as [016](016-webflux-support.md).
+
+**Each file carries a `**Model:**` line** with a recommended model and the reason, continuing
+the convention the 033–040 batch used. The split is by *kind* of work, not difficulty: Sonnet 5
+for the mechanically-specified ones, where the file already fixes the design and implementation
+is transcription (045/049); Opus 5 for 046; Opus 5 where a decision outlives the item — a public API
+surface or a concurrency spec (044); Fable 5.1 for open-ended design, where the failure
+mode is a wrong abstraction rather than a bug (048). Suggested order for what remains:
+045 → 049, then 044, then 048 last (it reads best once 044's hook exists).
 043 — `canonical-log-resilience4j` — landed 2026-08-23: `CanonicalResilience4j.register(registry)`
 attaches to each Resilience4j registry via its `EventPublisher` (plus `onEntryAdded`, so
 lazily-created instances are covered), contributing `retry_*`, the four `*_rejected_count`

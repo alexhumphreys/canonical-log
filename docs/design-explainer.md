@@ -725,6 +725,9 @@ virtual threads spread, not weaker.
   of a marked (vs thrown) failure.
 - **Cancellation is not an error**: `cancelled=true`, never `error=true` — client
   disconnects must not pollute error-rate dashboards.
+- **The handler-ownable `message` key is a constant** (`CanonicalFields.MESSAGE`):
+  `JsonCanonicalLineWriter` folds the human summary in under it unless the snapshot
+  already carries one, so every field the library writes stays a constant.
 
 ---
 

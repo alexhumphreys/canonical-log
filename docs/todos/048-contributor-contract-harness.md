@@ -8,6 +8,9 @@ harness also assert "no unbound contribution"), but don't block on it.
 long-deferred harness from `docs/CLAUDE.md`'s testing section, whose "pending the third
 contributor" extract-don't-design trigger has long since fired (Kafka, SQS, JobRunr,
 Resilience4j, spring-retry all shipped).
+**Model:** Fable 5.1 — the only open-ended design in the 044–049 batch: extracting one
+shared contract from six independently-written contributors. The failure mode isn't a bug,
+it's abstracting the wrong axis and every future contributor inheriting it.
 
 > **Explainer note:** `docs/design-explainer.md` §5 item 4 says the adapter/contributor
 > must-not-throw guards are "a backstop, not a license" with no per-contributor
