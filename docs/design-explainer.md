@@ -578,13 +578,33 @@ heap-growth tripwire.
 
 ### 4.1 vs MDC alone
 
-MDC already gives you a per-thread map that Logback prints. Why not just use it? Three
-reasons. MDC values are **strings** — you'd lose typed counters (`increment` becomes
-get-parse-add-put, non-atomic) and typed JSON output. MDC has **no lifecycle** — nothing
-says "emit one line at unit end"; you'd hand-roll the bracket anyway. And MDC's
-propagation story is *worse* than ThreadLocal's — you'd still need the coroutine element
-and executor wrappers, now for a map you don't control. The library instead *uses* MDC
-for exactly what it's good at: mirroring one correlation key onto ordinary log lines.
+MDC already gives you a per-thread map that Logback prints. Why not just use it? Start
+with the honest concession: if all you want is half a dozen string fields stamped onto
+whatever your handler already logs, MDC plus a JSON layout *is* enough, and this library
+would be overhead. The case for a separate mechanism only opens up when you want the
+canonical line's actual contract.
+
+The first and largest reason is that MDC has **no lifecycle**. Nothing in it says "emit
+exactly one line, at the end of this unit of work, describing how it went." Hand-rolling
+that bracket is where the ten-line version stops being ten lines: it has to classify the
+outcome from the block's result rather than trusting a `finally` (section 3.3),
+guarantee emit runs once and only once even when servlet async callbacks fire twice, and
+serialize with the unit *unbound* so a logging sink can't recurse into the line it's
+writing (both section 3.4) — and decide what a nested unit means. Each of those is a
+section of the failure catalog, not a detail.
+
+Second, MDC values are **strings**. You'd lose typed counters — `increment` becomes
+get-parse-add-put, non-atomic under the concurrent contributors of section 3.5 — and
+typed JSON output, so every number and duration arrives at your query engine quoted.
+
+Third, MDC does not spare you the propagation work. Section 2.5 is the evidence: MDC is
+*itself* a second thread-local, so the coroutine element and the executor wrappers built
+in section 2 have to carry it too, save-and-restore, at every seam. Choosing MDC alone
+doesn't remove that machinery — it just means you write it for a map whose copy-on-hop
+semantics belong to the logging framework rather than to you.
+
+So the library *uses* MDC for exactly what it's good at: mirroring one correlation key
+onto ordinary log lines, so the narrative logs join to the wide event.
 
 ### 4.2 vs OpenTelemetry spans
 
