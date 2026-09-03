@@ -56,6 +56,38 @@ class CanonicalLogContextTest : DescribeSpec({
             snap["code"] shouldBe 422L
         }
 
+        it("get and contains read a single key without snapshotting") {
+            val ctx = CanonicalLogContext(WorkUnit("id", "kind", Instant.now()))
+            ctx.put("string_field", "hello")
+            ctx.increment("counter", 2L)
+
+            ctx.get("string_field") shouldBe "hello"
+            ctx.get("counter") shouldBe 2L
+            ctx.contains("string_field") shouldBe true
+            ctx.contains("counter") shouldBe true
+        }
+
+        it("get returns null and contains false for an absent key") {
+            val ctx = CanonicalLogContext(WorkUnit("id", "kind", Instant.now()))
+            ctx.put("dropped", null)
+
+            ctx.get("never_written") shouldBe null
+            ctx.contains("never_written") shouldBe false
+            // put(null) writes nothing, so the key stays absent for both readers.
+            ctx.get("dropped") shouldBe null
+            ctx.contains("dropped") shouldBe false
+        }
+
+        it("get tracks later writes to the same key (it reads the live map, not a copy)") {
+            val ctx = CanonicalLogContext(WorkUnit("id", "kind", Instant.now()))
+            ctx.put("a", 1L)
+            val snap = ctx.snapshot()
+            ctx.put("a", 2L)
+
+            snap["a"] shouldBe 1L
+            ctx.get("a") shouldBe 2L
+        }
+
         it("snapshot is a defensive copy") {
             val ctx = CanonicalLogContext(WorkUnit("id", "kind", Instant.now()))
             ctx.put("a", 1L)

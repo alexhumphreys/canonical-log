@@ -71,7 +71,7 @@ public fun runCanonicalHttpRequest(
         // to Outcome.Cancelled (cancelled=true, no error=true), the same classification core's
         // withCanonicalLog uses, so the servlet and suspend entry points tell the same story.
         val outcome = scope.outcomeFor(error)
-        if (error is AsyncTimeoutCancellationException && ctx.snapshot()[CanonicalFields.CANCEL_REASON] == null) {
+        if (error is AsyncTimeoutCancellationException && ctx.get(CanonicalFields.CANCEL_REASON) == null) {
             ctx.put(CanonicalFields.CANCEL_REASON, "async_timeout")
         }
         scope.enrich(adapter, exchange, outcome)

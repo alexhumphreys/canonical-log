@@ -105,6 +105,26 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     }
 
     /**
+     * The current value at [key], or `null` if absent.
+     *
+     * The cheap single-key read behind the check-before-default pattern an adapter's
+     * `enrich` uses for handler-ownable fields (`ctx.get(CanonicalFields.ERROR_REASON) == null`)
+     * — same result as `snapshot()[key]` without copying the whole accumulator.
+     *
+     * Same consistency as [snapshot]: an individual field read is linearizable — never torn,
+     * never a lost increment (pinned by `CanonicalLogContextLincheckTest`). There is still no
+     * atomicity *across* keys, so two `get`s racing a [markFailed] can see `error=true` and
+     * `error_reason=null`, exactly as a snapshot can.
+     */
+    public fun get(key: String): Any? = fields[key]
+
+    /**
+     * True if [key] currently holds a value. Same per-key linearizability and same
+     * across-key weakenings as [get]/[snapshot].
+     */
+    public fun contains(key: String): Boolean = fields.containsKey(key)
+
+    /**
      * Return a defensive copy of the current fields. The copy is shallow: mutable
      * values stored via [put] (e.g. lists) are shared by reference. In practice the
      * values are primitives, strings, or otherwise immutable, so this is a non-issue —

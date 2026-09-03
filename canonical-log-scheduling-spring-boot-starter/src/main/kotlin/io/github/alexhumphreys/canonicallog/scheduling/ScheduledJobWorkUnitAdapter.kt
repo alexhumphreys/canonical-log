@@ -44,7 +44,7 @@ public class ScheduledJobWorkUnitAdapter : WorkUnitAdapter<ScheduledTaskObservat
         if (outcome is Outcome.Threw) {
             ctx.put(CanonicalFields.ERROR, true)
             ctx.put(CanonicalFields.ERROR_CLASS, outcome.cause::class.qualifiedName ?: "unknown")
-            if (ctx.snapshot()[CanonicalFields.ERROR_REASON] == null) {
+            if (ctx.get(CanonicalFields.ERROR_REASON) == null) {
                 ctx.put(CanonicalFields.ERROR_REASON, "exception")
             }
         }

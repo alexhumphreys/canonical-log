@@ -74,12 +74,11 @@ public class HttpWorkUnitAdapter(
             ctx.put(CanonicalFields.X_REQUEST_ID_REJECTED, true)
         }
 
-        val current = ctx.snapshot()
         val effectiveStatus = when (outcome) {
             is Outcome.Threw -> {
                 ctx.put(CanonicalFields.ERROR, true)
                 ctx.put(CanonicalFields.ERROR_CLASS, outcome.cause::class.qualifiedName ?: "unknown")
-                if (current[CanonicalFields.ERROR_REASON] == null) {
+                if (ctx.get(CanonicalFields.ERROR_REASON) == null) {
                     ctx.put(CanonicalFields.ERROR_REASON, "exception")
                 }
                 // Uncaught exceptions are mapped to 5xx by the servlet container's outer
@@ -92,7 +91,7 @@ public class HttpWorkUnitAdapter(
                 // Cancellation is not a failure: cancelled=true, no error=true, so
                 // client disconnects and request timeouts don't pollute error rates.
                 ctx.put(CanonicalFields.CANCELLED, true)
-                if (current[CanonicalFields.CANCEL_REASON] == null) {
+                if (ctx.get(CanonicalFields.CANCEL_REASON) == null) {
                     ctx.put(CanonicalFields.CANCEL_REASON, "cancelled")
                 }
                 // A cancelled request rarely produced a real response status — the
@@ -104,9 +103,9 @@ public class HttpWorkUnitAdapter(
                 if (capturedStatus < STATUS_BAD_REQUEST) STATUS_CLIENT_CLOSED_REQUEST else capturedStatus
             }
             is Outcome.Completed -> {
-                if (capturedStatus >= STATUS_SERVER_ERROR && current[CanonicalFields.ERROR] != true) {
+                if (capturedStatus >= STATUS_SERVER_ERROR && ctx.get(CanonicalFields.ERROR) != true) {
                     ctx.put(CanonicalFields.ERROR, true)
-                    if (current[CanonicalFields.ERROR_REASON] == null) {
+                    if (ctx.get(CanonicalFields.ERROR_REASON) == null) {
                         ctx.put(CanonicalFields.ERROR_REASON, "server_error")
                     }
                 }
