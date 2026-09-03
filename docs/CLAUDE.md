@@ -64,6 +64,7 @@ one-screen map:
 - `canonical-log-resilience4j-spring-boot-starter` — `CanonicalResilience4jRegistrar` (`SmartInitializingSingleton` + `ObjectProvider` per registry type, *not* `@ConditionalOnBean` — avoids the autoconfig-ordering trap). Opt-out: `canonical-log.resilience4j.enabled=false`.
 - `canonical-log-spring-retry-spring-boot-starter` — two listener beans, no framework-agnostic twin (both halves are Spring by definition): `CanonicalMethodRetryListener` (`ApplicationListener<MethodRetryEvent>`, Framework 7 built-in `@Retryable`) and `CanonicalSpringRetryListener` (classic `org.springframework.retry.RetryListener`, collected by `@EnableRetry`'s `RetryConfiguration`). Writes the shared `retry_*` constants; see the per-stack counting decision. Opt-out: `canonical-log.spring-retry.enabled=false`.
 - `canonical-log-test` — adopter test kit: `captureCanonicalLine{,Blocking}`, `testCanonicalLogContext()`/`withBoundCanonicalContext()`, and `RecordingCanonicalAppender` (`awaitLine`/`assertNoLine`) for lines produced by a real booted container.
+- `benchmarks` — JMH harness for the hot path (todo 044). Not published and deliberately *not* named `canonical-log-*`, so the root build's `isLibrary` branch skips maven-publish and the Java 17 target for it. Manual/nightly only; see the allocation-budget entry under Testing.
 - Sample app — exercises everything.
 
 The split between `canonical-log-<lib>` and `canonical-log-<lib>-spring-boot-starter` follows Java ecosystem convention: contributors are framework-agnostic, starters are the integration glue. This keeps the door open for Quarkus/Micronaut starters later without duplication.
@@ -221,6 +222,58 @@ For a single-endpoint test, every line should have the same `post_id` and the sa
   - The lifecycle-tail/MDC-bridge zone was triaged (was the "not yet triaged" follow-up; done 2026-07-11). Killed by new tests: the `CanonicalLogMdc.restore`/`uninstall` disabled-mode early-return mutants (pinned in `MdcCorrelationTest`: `enabled = false` means the library never *touches* a foreign `work_unit_id`, not merely that it doesn't install its own — on both the blocking and suspend emit paths); the `runSeed`/`runEnrich` guard survivors (they were the `?: "unknown"` elvis on `qualifiedName`, observable only with anonymous exception classes — pinned in `WithCanonicalLogTest`); the `CanonicalLog#markFailed`/`markDegraded` equality mutants (the Map overloads' "no-op when no work unit is bound" contract and the ambient vararg `markDegraded` path were untested — pinned in `OutcomeMarkersTest`).
   - Remaining accepted survivors in that zone, each verified benign: `WithCanonicalLogKt#emitFinalized` (removed `CanonicalLogMdc::restore`) and `CanonicalLogMdc#uninstall` line-65 return-`""` are masked by `CanonicalLogElement`'s per-dispatch restore — the mutated MDC state exists only between `emitFinalized` returning and the enclosing `withContext` exiting, a window in which no user code runs. `CanonicalLogMdc#install`/`uninstall` disabled-path return-`""` mutants are unobservable under the set-at-startup contract: the returned value only ever feeds `restore`, which is itself disabled. `CanonicalLogMdc#getEnabled` `NO_COVERAGE` is a Kotlin accessor artifact — core reads the backing field directly; only external modules (the Spring starter) call the getter.
   - Regenerate with `-PpitestThreads=4` (or higher) locally; the property maps to pitest's `threads` in core's build script (default 1/serial) and a full core run is ~2 minutes at 4 threads.
+
+**Allocation budgets (todo 044).** `canonical-log-core:AllocationBudgetTest` is a per-PR gate
+on the hot path's allocation cost. It measures bytes allocated by the measuring thread over a
+tight loop of one operation (`com.sun.management.ThreadMXBean.getThreadAllocatedBytes` — exact
+per-thread TLAB accounting, no agent, no fork, whole suite ~1s) and asserts the figure stays
+under a documented budget. Why this is stable enough to assert on: allocation is a property of
+the bytecode that runs, not of timing, and the only direction JIT moves it is *down* (escape
+analysis scalar-replacing a box) — every assertion is an upper bound, so that can only pass.
+Stray class loads/deopts show up as a fraction of a byte over 200k iterations, so the helper
+takes the **minimum of three runs** and "allocates nothing" is stated as `< 1 byte/op` rather
+than exactly 0. Budgets carry ~2x headroom: they're a ratchet against an accidental
+order-of-magnitude regression (a captured lambda added to a hot path, a defensive copy in
+`put`), not a pin on the exact byte count. A change that moves a number within budget needs no
+test edit; one that blows a budget should get the conversation the failure forces, and the
+budget comment updated to say why. Measured on JDK 25; the `-Ptest.jdk=17` job runs the same
+budgets (note `Thread.threadId()` is JDK 19+ — the test uses the deprecated `Thread.id` so it
+loads on 17).
+
+What it currently pins, and the one finding it produced:
+
+- **`put` on an open work unit allocates literally zero bytes** — ambient (`CanonicalLog.put`)
+  or direct (`ctx.put`), overwriting an existing key. So does every call made with *no* unit
+  open (app startup, un-instrumented paths, adopter unit tests) — that number is what lets
+  adopters sprinkle contributions without auditing which paths are instrumented.
+- **`increment` allocates 24 bytes/op** — the boxed `Long` result and nothing else, which is
+  the floor while the accumulator is a `ConcurrentHashMap<String, Any>` (`merge` has to hand
+  back a reference). It cost **80 bytes/op** until the budget test surfaced it: the `merge`
+  remapping lambda captured the mutable `conflictingType` local, so every call allocated a
+  fresh lambda instance plus a `Ref.ObjectRef` for the capture. The fix was to make the
+  remapping function the stateless singleton `SumLongs` and read the conflict off `merge`'s
+  **return value** instead — merge returns the value now stored under the key, so "not a
+  `Long`" *is* the conflict signal and the returned object is the conflicting one whose type
+  gets reported. Semantics are unchanged (`CanonicalLogContextTest`, `CanonicalFieldsTest`, and
+  Lincheck's quiescent marker-coherence `@Validate` all cover this path directly). The budget
+  is 48 and should stay tight — its job is to catch a capture creeping back in.
+- One whole blocking work unit (open, bind, MDC-mirror, 10 puts, enrich, unbind, emit) is
+  ~586 bytes and ~105ns; `snapshot()` of 20 fields ~912 bytes; `canonicalLineJson` of 20 fields
+  ~1272 bytes.
+
+**JMH benchmarks (`benchmarks` module, todo 044).** `./gradlew :benchmarks:jmh`, or
+`-Pjmh.args='<jmh cli args>'` to filter and profile (e.g. `-Pjmh.args='Put -prof gc'`). Manual
++ nightly only — nothing is wired into `check`/`build`, same policy as pitest. Supplies the
+*throughput* numbers the budget test can't measure, and `-prof gc` is an independent second
+opinion on its byte figures (the two agree exactly today: 24 B/op for `increment`, ≈0 for
+`put`). Benchmarks are written in **Java**, not Kotlin, so JMH's annotation processor runs
+without pulling kapt into the build — and as a side effect they exercise the same `@JvmStatic`
+surface `JavaErgonomicsTest` pins. Wired with a plain `JavaExec` on `org.openjdk.jmh.Main`
+rather than the `me.champeau.jmh` plugin: JMH's own `Main` is the entire integration, and this
+keeps another third-party Gradle plugin out of the build. Reference figures (Apple aarch64,
+JDK 25 — treat as shape, not absolutes): ambient `put` ~5.0ns, `increment` ~6.3ns, a call with
+no unit open ~0.77ns, `snapshot()` ~15ns, a full blocking round trip 43ns (0 fields) / 105ns
+(10 fields), `canonicalLineJson` ~340ns (10 fields) / ~2.5µs (40 fields).
 
 **The suspend-function path is verified.** A suspend controller (`/suspend/posts/{id}`) is wired into the sample app and was exercised under `ab -n 1000 -c 10`. All 1000 canonical lines emit with the expected fields and zero field bleeding (every line has the same `post_id`, `db_query_count`, `http_client_request_count`, status code).
 

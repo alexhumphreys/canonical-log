@@ -25,5 +25,6 @@ include(
     "canonical-log-scheduling-spring-boot-starter",
     "canonical-log-spring-boot-starter",
     "canonical-log-test",
+    "benchmarks",
     "samples:spring-demo",
 )
