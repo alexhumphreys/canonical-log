@@ -14,10 +14,8 @@ the file says to update). If implementation diverges from the file's design, rec
 
 ## Priority: agreed next up
 
-The 044–049 batch from the design-explainer gap reviews, in this order:
-045 → 049, then 044, then 048 last (it reads best once 044's hook exists). 045, 044 and 049
-have implementations on unmerged branches (`feat/scope-idempotence-guards`,
-`feat/contribution-diagnostics`); check those before starting from scratch.
+048 (contributor contract harness), the last of the 044–049 batch from the design-explainer
+gap reviews; it can now build on 044's diagnostic hooks.
 
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are small and
 slot anywhere. 015, 016, 018 and 029 are demand-driven — leave them until an adopter asks
@@ -33,19 +31,13 @@ slot anywhere. 015, 016, 018 and 029 are demand-driven — leave them until an a
 | [029](029-canonical-log-grpc.md) | `canonical-log-grpc` | Server interceptor entry point + client contributor (demand-driven) |
 | [041](041-kafka-adapter-hidden-record-docs.md) | Kafka hidden-record docs | Doc-only: KDoc + recipe pointer for frameworks that hide `ConsumerRecord` (the Kafka README already has it) |
 | [042](042-workunitadapter-of-factory.md) | `WorkUnitAdapter.of` | Lambda factory for one-off adapters (companion object + `of(describe, seed, enrich)`) |
-| [044](044-strict-mode-noop-contribution-detection.md) | Strict-mode no-op detection | Opt-in test/CI hook that makes silently-dropped ambient contributions loud |
-| [045](045-workunitscope-idempotence-guards.md) | Scope idempotence guards | CAS-guard `emit`/`unbind` inside `CanonicalWorkUnitScope` (WARN, not corrupt) |
 | [048](048-contributor-contract-harness.md) | Contributor contract harness | Reusable no-throw/no-leak/type-convention contract every contributor runs (promotes the deferred `ContributorContractTest` + negative-assertion helpers) |
-| [049](049-post-emit-write-detection.md) | Late-write detection | Count + WARN on contributions that arrive after emit through a captured context reference |
 
 Dependencies: 016's shared-writer dependency (020) has landed; 029 builds on the graduated
 open/close primitive (024, landed). 041 and 042 are independent; 042's recipe update reads
 best after 041's rewording (either order works, the second one rebases the recipe wording).
-In the 044–049 batch: 049 covers the half of the silent-misuse problem 044 leaves out (writes
-through a *captured* reference, where a unit is still reachable) and should reuse 044's hook
-if that ships Option A; 048 can reuse a strict-mode hook but doesn't depend on it. Each of
-those carries a note to keep `docs/design-explainer.md` in sync if the implementation changes
-something that document describes.
+048 can reuse the strict-mode hooks from 044 but doesn't depend on them; keep
+`docs/design-explainer.md` in sync if it changes something that document describes.
 
 **Each file carries a `**Model:**` line** with a recommended model and the reason. The split is
 by *kind* of work, not difficulty: Sonnet for the mechanically-specified ones, where the file
@@ -55,13 +47,14 @@ design, where the failure mode is a wrong abstraction rather than a bug (048).
 
 ## Landed
 
-Everything numbered 001–047 and not listed above has landed or been superseded (017 by 020); `git log --grep 'todo NNN'`
+Everything numbered 001–049 and not listed above has landed or been superseded (017 by 020); `git log --grep 'todo NNN'`
 finds the commit, and `docs/CLAUDE.md` records the resulting decisions. Most recently: 014
 (X-Request-Id hardening, in `canonical-log-servlet`), 022 (`canonical-log-dropwizard`), 023
 (`WorkUnitAdapter.seed`), 026 (`canonical-log-kafka`), 027 (trace correlation), 028
 (`JsonCanonicalLineWriter`), 030 (`canonical-log-sqs`), 031 (`canonical-log-jobrunr`), 043
-(Resilience4j + Spring retry), and 046/047 (`CanonicalLogContext.get`/`contains`,
-`CanonicalFields.MESSAGE`).
+(Resilience4j + Spring retry), 046/047 (`CanonicalLogContext.get`/`contains`,
+`CanonicalFields.MESSAGE`), and 044/045/049 (contribution diagnostics + scope idempotence
+guards).
 
 `docs/CLAUDE.md` and the `benchmarks` module call the allocation-budget/JMH work "todo 044";
-that is a different, landed item from the strict-mode 044 above — the number was reused.
+that is a different item from the strict-mode 044 — the number was reused.
