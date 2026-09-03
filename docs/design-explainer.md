@@ -455,6 +455,23 @@ are cut off at the snapshot — documented, deliberate, and pinned as the "must 
 contain" class in `HostilePlanPropertyTest`. The alternative (emit waits for arbitrary
 detached work) would let a leaked task delay a request's log line forever.
 
+The cutoff is deliberate; being *unable to notice it* was not. Both halves of the loss
+are now detectable, opt-in and off by default:
+
+- a contribution that finds **no bound unit** (the hop that skipped
+  `propagatingCanonicalContext()`) calls `CanonicalLog.onUnboundContribution(key)`;
+- a contribution that arrives through a **captured context reference** after the line was
+  emitted — the write succeeds against a live map and is lost anyway — bumps
+  `canonical_log_late_write_count` on the context, WARNs once per unit, and calls
+  `CanonicalLog.onLateWrite(workUnitId, key)`.
+
+Neither changes what production does (the hook is read only on the branch that was
+already going nowhere). `canonical-log-test` wraps them as `failOnUnboundContributions
+{ }` / `failOnLateWrites { }` / `failOnLostContributions { }`, which turn exactly these
+mistakes into a test failure naming the key; `recordLostContributions { }` collects them
+instead of throwing. See
+[`ContributionDiagnosticsTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/ContributionDiagnosticsTest.kt).
+
 ### 3.3 The line lies about the outcome
 
 *The failure:* the handler threw but the line says `Completed`; or a child coroutine
@@ -742,9 +759,16 @@ confidence means knowing the contract's edges, because these are the things **yo
 code can do to violate them:
 
 1. **Detached work races the emit.** Fire-and-forget (`GlobalScope.launch`, un-joined
-   pool tasks) contributions may or may not land — snapshot cutoff, silently. If a field
-   must appear, join before the block returns. Audit for `GlobalScope` and un-awaited
-   `@Async` in code that contributes fields.
+   pool tasks) contributions may or may not land — snapshot cutoff. If a field must
+   appear, join before the block returns. Audit for `GlobalScope` and un-awaited
+   `@Async` in code that contributes fields. This is no longer *silent* if you opt in:
+   a write arriving through a captured context after emit bumps
+   `canonical_log_late_write_count`, WARNs once per unit, and fires
+   `CanonicalLog.onLateWrite`; one that finds nothing bound fires
+   `CanonicalLog.onUnboundContribution` (§3.2). The counter is the one `canonical_log_*`
+   marker you will never see *on a line* — by definition it is written after
+   serialization — so the operator-facing signal is the WARN and the test-facing one is
+   the hook.
 2. **Custom executor paths need the wrapper — at the right place.** The coroutine element
    covers coroutines; plain pools need `propagatingCanonicalContext()` *on the submitting
    thread where the unit is active*. Wrapping a pool whose submissions happen on
@@ -771,10 +795,15 @@ code can do to violate them:
    for the inner switches — the documented wrong tool. Suspend code gets
    `withCanonicalLog` or `withCanonicalCoroutineContext`.
 
-None of these fail loudly. That's the honest cost of "telemetry never fails the
-operation": the failure mode of misuse is a quietly thinner or oddly-shaped line, so the
-diagnostics fields in item 5 and the WARN channel in item 4 are worth wiring into a
-dashboard from day one.
+None of these fail loudly *in production*. That's the honest cost of "telemetry never
+fails the operation": the failure mode of misuse is a quietly thinner or oddly-shaped
+line, so the diagnostics fields in item 5 and the WARN channel in item 4 are worth
+wiring into a dashboard from day one. Items 1 and 2 — the propagation mistakes, the
+likeliest of the set — additionally have a *test-time* strict mode: wrap a suite in
+`failOnLostContributions { }` from `canonical-log-test` and a contribution that would
+have quietly gone nowhere becomes an assertion failure naming the field. It is off by
+default and costs a bound contribution nothing, so there is no reason not to turn it on
+in CI.
 
 ---
 

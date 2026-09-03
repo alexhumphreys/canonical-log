@@ -172,6 +172,14 @@ Telemetry never fails the operation it observes; failures are recorded on the li
 | `canonical_log_seed_error_class` | String | FQCN of the seed exception |
 | `canonical_log_contributor_error` | Boolean | a contributor (interceptor/listener/event consumer) threw while contributing (swallowed) |
 | `canonical_log_contributor_error_class` | String | FQCN of the contributor exception |
+| `canonical_log_late_write_count` | Long | contributions that arrived after this unit's line was emitted (see below) |
+
+`canonical_log_late_write_count` is the one marker you will **never see on a line**: by
+definition it is written after the line was serialized. It exists so the loss is countable in a
+test; the operator-facing signal is the single WARN the library logs per work unit, and the
+test-facing one is `CanonicalLog.onLateWrite` (wrapped as `failOnLateWrites { }` in
+`canonical-log-test`). Its sibling — an ambient contribution that found no bound unit at all —
+writes nothing anywhere and is reported only through `CanonicalLog.onUnboundContribution`.
 
 ## Line composition
 

@@ -169,6 +169,20 @@ public object CanonicalFields {
     /** `String` — fully-qualified class name of the exception a throwing contributor raised. */
     public const val CONTRIBUTOR_ERROR_CLASS: String = "canonical_log_contributor_error_class"
 
+    /**
+     * `Long` — contributions that arrived **after** this unit's canonical line was emitted, via a
+     * captured [CanonicalLogContext] reference (an un-awaited `@Async`, a task that outlives its
+     * unit, an OkHttp `enqueue()` callback resolving the request tag late). The writes succeed
+     * against a live map but missed the snapshot, so they are lost.
+     *
+     * Unlike every other `canonical_log_*` marker this one is **not queryable on a line**: by
+     * definition it is written after the line was serialized. It exists so the loss is countable
+     * in a test or a heap dump; the operator-facing signal is the one WARN the library logs per
+     * unit, and the test-facing one is [CanonicalLog.onLateWrite]. Named `_count` per the counter
+     * convention (todo 049 spelled it `canonical_log_late_write`).
+     */
+    public const val LATE_WRITE_COUNT: String = "canonical_log_late_write_count"
+
     // --- Trace correlation (written by seeding adapters, not by core itself) ---
 
     /**
