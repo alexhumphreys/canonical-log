@@ -65,6 +65,67 @@ This is why `CanonicalLog.markFailed("post_not_found")` in a handler survives ev
 the HTTP adapter also has opinions about errors: the adapter only fills `error_reason`
 when nobody else did.
 
+### The providers: three shapes, two lifecycle styles
+
+"Deliberately boring" deserves substantiation. Every provider module in the repo is one
+of three shapes, and once you can classify a module you've mostly understood it:
+
+**Contributors** hook a library's native extension point and write fields into whatever
+unit happens to be active — they never open or close anything. The
+[`OkHttpCanonicalInterceptor`](../canonical-log-okhttp/src/main/kotlin/io/github/alexhumphreys/canonicallog/okhttp/OkHttpCanonicalInterceptor.kt)
+is the archetype: resolve the context once (request tag first, then the thread binding —
+the tag is what survives the hop to OkHttp's dispatcher threads on `enqueue()`), time
+`chain.proceed()`, and `ctx?.increment(...)` a handful of counters. The `?.` is the whole
+integration contract: no active unit, no-op. The JDBC listener, the Kafka producer
+decorator, and the Resilience4j event subscription are the same shape against different
+extension points — Resilience4j notably via *event observation* rather than wrapping, so
+the library is never in the call path of a resilience decoration.
+
+**Adapters** (`WorkUnitAdapter` implementations) don't hook anything — they're passive
+translators the lifecycle calls at fixed points: `describe` (identity, at open), `seed`
+(ambient capture, at open, on the opening thread), `enrich` (mechanical end-of-unit
+fields, at close). One per *kind* of entry point:
+[`HttpWorkUnitAdapter`](../canonical-log-servlet/src/main/kotlin/io/github/alexhumphreys/canonicallog/servlet/HttpWorkUnitAdapter.kt)
+for requests,
+[`JobRunrWorkUnitAdapter`](../canonical-log-jobrunr/src/main/kotlin/io/github/alexhumphreys/canonicallog/jobrunr/JobRunrWorkUnitAdapter.kt)
+for job attempts, and so on.
+
+**Entry points** own the lifecycle — they decide where a unit begins and ends, and they
+come in exactly two styles, dictated by the shape of the framework hook available:
+
+- *Closure style*, when the framework gives you one function call that brackets the whole
+  unit: wrap it in `withCanonicalLogBlocking` / `withCanonicalLog` and the library
+  sequences describe → seed → bind → block → enrich → unbind → emit for you. This is the
+  style adopter code and simple integrations should always reach for first.
+- *Open/close (callback) style*, when the framework delivers the boundaries as **separate
+  callbacks** and no single closure can span them: `openCanonicalWorkUnit` returns a
+  [`CanonicalWorkUnitScope`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/WithCanonicalLog.kt)
+  and the integration drives the tail (`outcomeFor` → `enrich` → `unbind` → `emit`)
+  itself, upholding the invariants section 3.4 describes. Two worked examples, each
+  solving the split differently:
+  - [`CanonicalJobServerFilter`](../canonical-log-jobrunr/src/main/kotlin/io/github/alexhumphreys/canonicallog/jobrunr/CanonicalJobServerFilter.kt)
+    (JobRunr): open in `onProcessing`, finish in `onProcessingSucceeded` /
+    `onProcessingFailed`. The callbacks arrive on the *same worker thread*, so the open
+    scope is parked in a `ThreadLocal` between them (a field would be wrong — one filter
+    instance serves all workers), with a warn-and-skip guard if the same-thread
+    assumption ever breaks.
+  - `runCanonicalHttpRequest` in
+    [`canonical-log-servlet`](../canonical-log-servlet/src/main/kotlin/io/github/alexhumphreys/canonicallog/servlet/CanonicalLogServletFilter.kt)
+    (the single copy of the HTTP lifecycle both the Spring and plain servlet filters
+    call): sync requests finish inline, but an async-started request returns from the
+    filter *before the handler completes*, so the terminal moves to an `AsyncListener` —
+    which can fire `onComplete`/`onError`/`onTimeout` more than once and concurrently,
+    hence the CAS-guarded single emit in `CanonicalLogAsyncEmitListener`. Note the
+    ordering it must preserve: `unbind` happens on the request thread in `finally`
+    (before the filter returns), while `enrich`/`emit` may run later on the listener's
+    thread — the exact split the closure form can't express, and the reason the
+    open/close style exists.
+
+The moral for reading any provider: find which shape it is, then check it against that
+shape's one contract — contributors must resolve-then-`?.` and never throw; adapters must
+write through `ctx` and never throw; entry points must uphold the lifecycle invariants.
+Everything else in a provider file is framework-specific plumbing.
+
 ---
 
 ## 2. The context problem — the concurrency tutorial
