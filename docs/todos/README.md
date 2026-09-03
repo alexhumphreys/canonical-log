@@ -63,7 +63,6 @@ materializes.
 | [039](039-concurrent-emit-output-integrity.md) | Concurrent-emit output integrity | Parse-back every line from concurrent writers; adversarial values; late-increment cutoff |
 | [041](041-kafka-adapter-hidden-record-docs.md) | Kafka hidden-record docs | Doc-only: KDoc + recipe pointer for frameworks that hide `ConsumerRecord` |
 | [042](042-workunitadapter-of-factory.md) | `WorkUnitAdapter.of` | Lambda factory for one-off adapters (companion object + `of(describe, seed, enrich)`) |
-| [045](045-workunitscope-idempotence-guards.md) | Scope idempotence guards | CAS-guard `emit`/`unbind` inside `CanonicalWorkUnitScope` (WARN, not corrupt) |
 | [048](048-contributor-contract-harness.md) | Contributor contract harness | Reusable no-throw/no-leak/type-convention contract every contributor runs (promotes the deferred `ContributorContractTest` + negative-assertion helpers) |
 
 Dependencies: 022 depends on 021 (landed); 023 and 024 are independent (023 and 018 touch the
@@ -77,33 +76,34 @@ primitive; 030 depends on 026 (shared `MESSAGING_*` constants) and 024 (recipe p
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are independent of
 everything; 041 is doc-only and 042's recipe update reads best after 041's rewording (either
 order works, second one rebases the recipe wording).
-044, 046, 047 and 049 (from the design-explainer gap reviews — see PR #28) **landed
-2026-09-03**: 047 as `CanonicalFields.MESSAGE`; 046 as `CanonicalLogContext.get`/`contains`
-(with the check-before-default sweep across every shipped adapter and a `get`/`contains`
-operation added to the Lincheck spec — `snapshot()` is now called only at emit time and in
-tests); and 044 + 049 together as one diagnostic surface, since 049's own file asked to reuse
-044's hook rather than add a second one — `CanonicalLog.onUnboundContribution` (Option A's core
-hook, read only on the already-unbound branch, so no cost when bound) and
+044–047 and 049 (from the design-explainer gap reviews — see PR #28) **landed 2026-09-03**:
+047 as `CanonicalFields.MESSAGE`; 046 as `CanonicalLogContext.get`/`contains` (with the
+check-before-default sweep across every shipped adapter and a `get`/`contains` operation added
+to the Lincheck spec — `snapshot()` is now called only at emit time and in tests); 045 as
+`compareAndSet` backstops on `CanonicalWorkUnitScope.emit`/`unbind` plus an enrich-after-emit
+WARN; and 044 + 049 together as one diagnostic surface — `CanonicalLog.onUnboundContribution`
+(Option A's core hook, read only on the already-unbound branch, so no cost when bound) and
 `CanonicalLog.onLateWrite` alongside a `canonical_log_late_write_count` counter and a
 once-per-unit WARN, wrapped for adopters as `canonical-log-test`'s `failOnUnboundContributions`
 / `failOnLateWrites` / `failOnLostContributions` / `recordLostContributions`. See the
-diagnostics entry in `docs/CLAUDE.md` for the decisions, including the two deviations from the
-files as written (the counter is `_count`-suffixed per the naming convention, and 044's
-fallback `strict` flag was unnecessary — the hook costs a *bound* contribution nothing, which
-`AllocationBudgetTest` confirms). `docs/design-explainer.md` §3.2, §4.6 and §5 were updated in
-step, as those files' explainer notes required.
-
-Still open from that batch: [045](045-workunitscope-idempotence-guards.md) (independent, and
-its tests read best on top of 049's late-write counter) and
-[048](048-contributor-contract-harness.md), which reads best now that 044's hook exists and can
-reuse it. The reactive/CompletableFuture-chain propagation gap the same review re-surfaced is
-already tracked as [016](016-webflux-support.md).
+diagnostics and open/close entries in `docs/CLAUDE.md` for the decisions, including the two
+deviations from the files as written (the counter is `_count`-suffixed per the naming
+convention, and 044's fallback `strict` flag was unnecessary — the hook costs a *bound*
+contribution nothing, which `AllocationBudgetTest` confirms). `docs/design-explainer.md`
+was updated in the same change, as each file's explainer note required: §3.2 and §5 item 1
+now name the two diagnostics instead of calling the loss silent, §3.4 documents the scope's
+backstop guards, §5's closing paragraph points at the test-time strict mode, and §4.6 covers
+`get`/`contains` and `CanonicalFields.MESSAGE`.
+[048](048-contributor-contract-harness.md) remains open; it reads best now that 044's hook
+exists, and can reuse it. The reactive/CompletableFuture-chain propagation gap the same review
+re-surfaced is already tracked as [016](016-webflux-support.md).
 
 **Each file carries a `**Model:**` line** with a recommended model and the reason, continuing
 the convention the 033–040 batch used. The split is by *kind* of work, not difficulty: Sonnet 5
 for the mechanically-specified ones, where the file already fixes the design and implementation
-is transcription (045); Fable 5.1 for open-ended design, where the failure mode is a wrong
-abstraction rather than a bug (048). Those two are what remain of the batch.
+is transcription; Opus 5 where a decision outlives the item — a public API surface or a
+concurrency spec; Fable 5.1 for open-ended design, where the failure mode is a wrong
+abstraction rather than a bug (048, the remaining item of that batch).
 043 — `canonical-log-resilience4j` — landed 2026-08-23: `CanonicalResilience4j.register(registry)`
 attaches to each Resilience4j registry via its `EventPublisher` (plus `onEntryAdded`, so
 lazily-created instances are covered), contributing `retry_*`, the four `*_rejected_count`
