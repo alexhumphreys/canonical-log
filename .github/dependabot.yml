@@ -1,0 +1,64 @@
+version: 2
+
+updates:
+  # Gradle: reads gradle/libs.versions.toml (version catalogs are supported natively) as
+  # well as the build scripts. Grouped so a Kotlin or Spring Boot bump arrives as one PR
+  # rather than one per artifact — these families have to move in lockstep anyway.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    # Release PRs derive their version bump from the PR title, so keep Dependabot's titles
+    # in conventional-commit form: a dependency bump should never look like a `feat:`.
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.jetbrains.kotlinx:kotlinx-coroutines*"
+      spring:
+        patterns:
+          - "org.springframework*"
+          - "io.spring.dependency-management*"
+      testing:
+        patterns:
+          - "io.kotest*"
+          - "org.junit*"
+          - "org.testcontainers*"
+          - "org.jetbrains.lincheck*"
+          - "org.pitest*"
+    ignore:
+      # compileOnly integration floors are deliberately pinned low so adopters on older
+      # versions can still resolve these modules — see the comments in libs.versions.toml.
+      # Majors would raise the floor, which is a breaking change for consumers, so those
+      # are a human decision rather than an automated PR.
+      - dependency-name: jakarta.servlet:jakarta.servlet-api
+        update-types: [version-update:semver-major]
+      - dependency-name: io.dropwizard:*
+        update-types: [version-update:semver-major]
+      - dependency-name: io.opentelemetry:*
+        update-types: [version-update:semver-major]
+      - dependency-name: org.apache.kafka:kafka-clients
+        update-types: [version-update:semver-major]
+      - dependency-name: software.amazon.awssdk:*
+        update-types: [version-update:semver-major]
+      - dependency-name: org.jobrunr:jobrunr
+        update-types: [version-update:semver-major]
+      - dependency-name: io.github.resilience4j:*
+        update-types: [version-update:semver-major]
+      - dependency-name: org.springframework.retry:spring-retry
+        update-types: [version-update:semver-major]
+
+  # The pinned action versions in ci.yml / nightly.yml / release.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope
