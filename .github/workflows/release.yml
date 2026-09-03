@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0 # full history + tags so axion can compute the version
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
