@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Install both JDKs: compile on 25 (JAVA_HOME, listed last), run the library test
       # suites on a real 17 JVM via the -Ptest.jdk=17 launcher override. This proves the
