@@ -60,7 +60,7 @@ public class RecordingCanonicalAppender private constructor(
          */
         public fun attach(loggerName: String = CANONICAL_LOGGER_NAME): RecordingCanonicalAppender {
             val logger = LoggerFactory.getLogger(loggerName) as LogbackLogger
-            val appender = ListAppender<ILoggingEvent>().also { it.start() }
+            val appender = DeferredProcessingListAppender().also { it.start() }
             logger.addAppender(appender)
             logger.level = Level.INFO
             return RecordingCanonicalAppender(logger, appender)
@@ -91,11 +91,13 @@ public class RecordingCanonicalAppender private constructor(
                 matches.size == 1 -> return canonicalFields(matches.single())
                 matches.size > 1 -> error(
                     "expected exactly one canonical line matching the predicate, found ${matches.size} " +
-                        "(a field-bleed regression, or the predicate is not specific enough)",
+                        "(a field-bleed regression, or the predicate is not specific enough)" +
+                        describe(matches),
                 )
                 System.currentTimeMillis() >= deadline -> error(
                     "no canonical line matched the predicate within ${timeoutMs}ms " +
-                        "(saw ${canonicalEvents().size} canonical line(s) total)",
+                        "(saw ${canonicalEvents().size} canonical line(s) total)" +
+                        describe(canonicalEvents()),
                 )
                 else -> Thread.sleep(POLL_INTERVAL_MS)
             }
@@ -131,6 +133,19 @@ public class RecordingCanonicalAppender private constructor(
         appender.stop()
     }
 
+    // A predicate that matches nothing is ambiguous on its own: the line may never have been
+    // emitted, or it may be there with fields the predicate did not expect. Dumping what was
+    // actually recorded separates those two without a debugger — and, since a line's fields can
+    // be blanked by an MDC-capture race, shows an empty field map for what it is.
+    private fun describe(events: List<ILoggingEvent>): String =
+        if (events.isEmpty()) {
+            ""
+        } else {
+            events.joinToString(prefix = "; recorded lines: ", separator = ", ") { event ->
+                "[${event.message}] ${canonicalFields(event)}"
+            }
+        }
+
     private fun canonicalEvents(): List<ILoggingEvent> =
         snapshot().filter { it.loggerName == CANONICAL_LOGGER_NAME }
 
@@ -139,6 +154,27 @@ public class RecordingCanonicalAppender private constructor(
     // and drop any trailing null a racing append may have left visible before its element write
     // became visible.
     private fun snapshot(): List<ILoggingEvent> = ArrayList(appender.list).filterNotNull()
+}
+
+/**
+ * A [ListAppender] that calls `prepareForDeferredProcessing()` on the producer thread.
+ *
+ * Logback captures an event's MDC map *lazily*: the first caller of
+ * `ILoggingEvent.getMDCPropertyMap()` snapshots whatever MDC its **own** thread holds and caches
+ * that map on the event forever. A plain `ListAppender` never forces that capture, so the poll
+ * loop in [RecordingCanonicalAppender.awaitLine] — running on the test thread, whose MDC is empty
+ * — could win the race and permanently blank the fields of a line the producer thread had already
+ * populated. The line was then recorded but unmatchable, failing only as a timeout on loaded CI.
+ *
+ * Forcing the capture at append time binds the MDC snapshot to the emitting thread, which is the
+ * only thread that has the right one. (This is the same call logback's own `AsyncAppender` makes
+ * before handing an event across threads.)
+ */
+private class DeferredProcessingListAppender : ListAppender<ILoggingEvent>() {
+    override fun append(eventObject: ILoggingEvent) {
+        eventObject.prepareForDeferredProcessing()
+        super.append(eventObject)
+    }
 }
 
 /**

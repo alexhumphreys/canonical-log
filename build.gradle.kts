@@ -52,6 +52,18 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+
+        // Gradle's default prints a failure as bare "SomeException at Foo.kt:41" — the message
+        // lands only in the test-results XML, which on CI means downloading the artifact before
+        // you can even tell what the assertion said. These harness failures carry their whole
+        // diagnosis in the message (which fields were seen, how many lines matched), so print it
+        // in the console log where the failing run already is.
+        testLogging {
+            events("failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showStackTraces = true
+            showCauses = true
+        }
     }
 
     // Nightly CI matrix (todo 040): -XX:ActiveProcessorCount forces the JVM to believe it
