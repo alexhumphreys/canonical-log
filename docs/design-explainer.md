@@ -516,12 +516,23 @@ async mode), emit-exactly-once is **the caller's job**, guarded with an
 the worked example, because servlet async callbacks (`onComplete`/`onTimeout`/`onError`)
 genuinely can race and repeat.
 
+The scope carries its own `compareAndSet` backstop underneath that contract: a second
+`emit` is dropped with one WARN rather than publishing a duplicate line, a second
+`unbind` refuses to restore again (putting a stale `previousContext` back over whatever
+is bound by then is precisely the corruption worth preventing), and an `enrich` after
+`emit` still runs but WARNs that its fields missed the line. This is defence in depth,
+not a replacement for the caller's guard — that one also gates the listener-side work
+around the finalize step, and only the caller can decide which of two racing callbacks
+should win.
+
 *The evidence:*
 [`LifecycleReentrancyTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/LifecycleReentrancyTest.kt)
 pins the emit-with-nothing-bound contract (writes inside emit no-op; a unit opened inside
 emit nests under the *enclosing* unit, never the finalized one);
 [`CanonicalLogAsyncEmitListenerTest`](../canonical-log-servlet/src/test/kotlin/io/github/alexhumphreys/canonicallog/servlet/CanonicalLogAsyncEmitListenerTest.kt)
-hammers the racing-callbacks case.
+hammers the racing-callbacks case; the scope's own guards (double emit, double unbind
+leaving no phantom nesting, an eight-thread emit race) are pinned in
+[`CanonicalWorkUnitScopeTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/CanonicalWorkUnitScopeTest.kt).
 
 ### 3.5 Torn reads, lost increments, non-atomic snapshots
 
@@ -778,7 +789,9 @@ code can do to violate them:
 3. **The open/close scope shifts invariants to you.** `openCanonicalWorkUnit` /
    `CanonicalWorkUnitScope` requires: unbind exactly once, in a `finally`, *on the
    opening thread*; enrich before emit, each at most once; emit-exactly-once guarded by
-   CAS if your terminal callbacks can race. Use the closure forms unless you genuinely
+   CAS if your terminal callbacks can race. The scope's internal guards (§3.4) degrade a
+   repeat call to a no-op plus a WARN rather than a duplicate line or a clobbered
+   binding, but they are a backstop, not the contract. Use the closure forms unless you genuinely
    can't; if you write a new integration, crib from `runCanonicalHttpRequest` in
    `canonical-log-servlet`.
 4. **Adapters and contributors must not throw** — the guards are a backstop that records
