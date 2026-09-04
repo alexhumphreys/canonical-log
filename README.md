@@ -24,7 +24,11 @@ Stripe-style [canonical log lines](https://stripe.com/blog/canonical-log-lines) 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.alexhumphreys:canonical-log-spring-boot-starter:0.1.0-SNAPSHOT")
+    // The BOM pins every canonical-log module to one version, so the modules below
+    // (and any you add later) are declared without a version of their own.
+    implementation(platform("io.github.alexhumphreys:canonical-log-bom:0.1.0-SNAPSHOT"))
+
+    implementation("io.github.alexhumphreys:canonical-log-spring-boot-starter")
 }
 ```
 

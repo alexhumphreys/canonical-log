@@ -29,6 +29,49 @@ subprojects {
     group = "io.github.alexhumphreys"
     version = computedVersion
 
+    // The BOM is a POM-only module: it publishes version constraints for every library
+    // module so consumers pin one version (`implementation(platform("io.github.alexhumphreys:canonical-log-bom:X"))`)
+    // instead of seventeen. It carries no code, so it takes none of the Kotlin/toolchain/
+    // test configuration below — and it has to be handled before the `:canonical-log-`
+    // prefix check further down, which would otherwise treat it as a code module.
+    if (name == "canonical-log-bom") {
+        apply(plugin = "java-platform")
+        apply(plugin = "maven-publish")
+
+        dependencies {
+            constraints {
+                // Every library module except the BOM itself, at this build's version.
+                // Derived from the settings.gradle.kts include list rather than hand-
+                // maintained, so a new module can never be forgotten here.
+                rootProject.subprojects
+                    .map { it.name }
+                    .filter { it.startsWith("canonical-log-") && it != "canonical-log-bom" }
+                    .sorted()
+                    .forEach { add("api", "io.github.alexhumphreys:$it:$computedVersion") }
+            }
+        }
+
+        extensions.configure<PublishingExtension> {
+            publications {
+                create<MavenPublication>("maven") {
+                    from(components["javaPlatform"])
+                }
+            }
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/alexhumphreys/canonical-log")
+                    credentials {
+                        username = System.getenv("GITHUB_ACTOR")
+                        password = System.getenv("GITHUB_TOKEN")
+                    }
+                }
+            }
+        }
+
+        return@subprojects
+    }
+
     apply(plugin = "org.jetbrains.kotlin.jvm")
 
     extensions.configure<JavaPluginExtension> {
