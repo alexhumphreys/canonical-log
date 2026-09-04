@@ -8,7 +8,7 @@ package io.github.alexhumphreys.canonicallog
  * sampling the natural shape: always keep failures, sample healthy traffic:
  *
  * ```kotlin
- * CanonicalLogSampler { ctx -> ctx.snapshot()["error"] == true || Random.nextDouble() < 0.01 }
+ * CanonicalLogSampler { ctx -> ctx.get(CanonicalFields.ERROR) == true || Random.nextDouble() < 0.01 }
  * ```
  *
  * Register/provide an implementation and the integration wires it into its sink path; the

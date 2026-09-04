@@ -16,7 +16,8 @@ package io.github.alexhumphreys.canonicallog
  * **Precedence.** Adapter `enrich` runs *after* the handler block, so for the same key the
  * adapter's value wins. The library's adapters deliberately defer to a handler-set value for
  * the two "intent" fields — [ERROR_REASON] and [CANCEL_REASON] — by checking whether the key
- * is already present before writing their own default. Everything else the adapter writes
+ * is already present ([CanonicalLogContext.get] / [CanonicalLogContext.contains]) before
+ * writing their own default. Everything else the adapter writes
  * (status, durations, counts) overwrites. See [WorkUnitAdapter.enrich].
  *
  * Naming/type conventions (from `docs/CLAUDE.md`): snake_case, integer-ms durations with
@@ -66,6 +67,16 @@ public object CanonicalFields {
      * timeout.
      */
     public const val CANCEL_REASON: String = "cancel_reason"
+
+    // --- Line composition ---
+
+    /**
+     * `String` — the human-readable summary. Written by [JsonCanonicalLineWriter] (folded into
+     * the JSON object) when absent; a handler-set value wins — the same check-before-default
+     * pattern as [ERROR_REASON]. The MDC/Logstash writers keep the summary as the slf4j event
+     * message instead and do not write this field.
+     */
+    public const val MESSAGE: String = "message"
 
     // --- Work-unit identity ---
 

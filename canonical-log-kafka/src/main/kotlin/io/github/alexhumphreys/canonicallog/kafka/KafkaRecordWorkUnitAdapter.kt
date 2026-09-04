@@ -73,13 +73,13 @@ public class KafkaRecordWorkUnitAdapter(
                 ctx.put("error_class", outcome.cause::class.qualifiedName ?: "unknown")
                 // check-before-default: a handler-set error_reason (markFailed / dead-lettering)
                 // expresses intent the adapter must not clobber.
-                if (ctx.snapshot()["error_reason"] == null) {
+                if (ctx.get("error_reason") == null) {
                     ctx.put("error_reason", "exception")
                 }
             }
             is Outcome.Cancelled -> {
                 ctx.put("cancelled", true)
-                if (ctx.snapshot()["cancel_reason"] == null) {
+                if (ctx.get("cancel_reason") == null) {
                     ctx.put("cancel_reason", "cancelled")
                 }
             }

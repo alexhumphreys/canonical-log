@@ -55,13 +55,13 @@ public class JobRunrWorkUnitAdapter : WorkUnitAdapter<Job> {
             is Outcome.Threw -> {
                 ctx.put(CanonicalFields.ERROR, true)
                 ctx.put(CanonicalFields.ERROR_CLASS, outcome.cause::class.qualifiedName ?: "unknown")
-                if (ctx.snapshot()[CanonicalFields.ERROR_REASON] == null) {
+                if (ctx.get(CanonicalFields.ERROR_REASON) == null) {
                     ctx.put(CanonicalFields.ERROR_REASON, "exception")
                 }
             }
             is Outcome.Cancelled -> {
                 ctx.put(CanonicalFields.CANCELLED, true)
-                if (ctx.snapshot()[CanonicalFields.CANCEL_REASON] == null) {
+                if (ctx.get(CanonicalFields.CANCEL_REASON) == null) {
                     ctx.put(CanonicalFields.CANCEL_REASON, "cancelled")
                 }
             }

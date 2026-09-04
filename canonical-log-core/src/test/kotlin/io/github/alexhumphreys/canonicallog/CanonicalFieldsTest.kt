@@ -25,6 +25,8 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.CANCELLED shouldBe "cancelled"
             CanonicalFields.CANCEL_REASON shouldBe "cancel_reason"
 
+            CanonicalFields.MESSAGE shouldBe "message"
+
             CanonicalFields.WORK_UNIT_ID shouldBe "work_unit_id"
             CanonicalFields.WORK_UNIT_KIND shouldBe "work_unit_kind"
             CanonicalFields.PARENT_WORK_UNIT_ID shouldBe "parent_work_unit_id"
@@ -115,6 +117,7 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.DEGRADED_REASON,
     CanonicalFields.CANCELLED,
     CanonicalFields.CANCEL_REASON,
+    CanonicalFields.MESSAGE,
     CanonicalFields.WORK_UNIT_ID,
     CanonicalFields.WORK_UNIT_KIND,
     CanonicalFields.PARENT_WORK_UNIT_ID,

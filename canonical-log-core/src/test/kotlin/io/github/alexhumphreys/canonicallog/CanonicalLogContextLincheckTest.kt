@@ -96,6 +96,18 @@ class CanonicalLogContextLincheckTest {
     @Operation
     fun snapshotValue(@Param(name = "key") key: String): Any? = ctx.snapshot()[key]
 
+    /**
+     * The cheap single-key read (todo 046). Same read path as [snapshotValue] minus the copy,
+     * so it must satisfy the same per-field linearizability the spec models — modelling it
+     * keeps the documented "same guarantees as `snapshot`, without the copy" claim honest.
+     */
+    @Operation
+    fun getValue(@Param(name = "key") key: String): Any? = ctx.get(key)
+
+    /** Presence form of [getValue]; linearizes at the same point. */
+    @Operation
+    fun containsValue(@Param(name = "key") key: String): Boolean = ctx.contains(key)
+
     // Deliberately no snapshotErrorReason() operation: the error/error_reason pair is a
     // non-atomic compound write (weakening 3 above); observing both fields makes the
     // mid-markFailed state visible and no sequential order can explain it.
@@ -182,6 +194,10 @@ class SequentialCanonicalLog {
     }
 
     fun snapshotValue(key: String): Any? = fields[key]
+
+    fun getValue(key: String): Any? = fields[key]
+
+    fun containsValue(key: String): Boolean = fields.containsKey(key)
 
     fun snapshotError(): Any? = fields[CanonicalFields.ERROR]
 }

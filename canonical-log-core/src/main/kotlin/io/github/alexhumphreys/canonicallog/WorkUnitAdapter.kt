@@ -82,7 +82,7 @@ public interface WorkUnitAdapter<T> {
      * (status, durations, [WorkUnit] identity): the adapter is authoritative. The
      * deliberate exceptions are the two "intent" fields — [CanonicalFields.ERROR_REASON]
      * and [CanonicalFields.CANCEL_REASON] — where a handler-set value expresses intent the
-     * adapter shouldn't clobber; the reference adapter checks `ctx.snapshot()[key] == null`
+     * adapter shouldn't clobber; the reference adapter checks `ctx.get(key) == null`
      * before writing its own default (`"exception"` / `"server_error"` / `"cancelled"`).
      * Follow the same check-before-default pattern in custom adapters for any field a
      * handler is expected to own. Reference the [CanonicalFields] constants rather than

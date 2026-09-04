@@ -66,13 +66,13 @@ public class SqsMessageWorkUnitAdapter(
             is Outcome.Threw -> {
                 ctx.put("error", true)
                 ctx.put("error_class", outcome.cause::class.qualifiedName ?: "unknown")
-                if (ctx.snapshot()["error_reason"] == null) {
+                if (ctx.get("error_reason") == null) {
                     ctx.put("error_reason", "exception")
                 }
             }
             is Outcome.Cancelled -> {
                 ctx.put("cancelled", true)
-                if (ctx.snapshot()["cancel_reason"] == null) {
+                if (ctx.get("cancel_reason") == null) {
                     ctx.put("cancel_reason", "cancelled")
                 }
             }
