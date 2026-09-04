@@ -10,7 +10,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * Logger for the library's own failure reporting (a throwing emit or enrich). Named
  * after the package rather than a class so adopters can target it with one config line.
  */
-private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
+internal val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
 
 /**
  * The hand-off the entry point uses to publish the finalized canonical line.
@@ -32,7 +32,13 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * nested, nothing at top level. Consequences, pinned by `LifecycleReentrancyTest`:
  *  - Ambient writes ([CanonicalLog.put]/`increment`) inside emit never land on the line
  *    being emitted. At top level they are no-ops; inside a nested unit's emit they land
- *    on the *enclosing* unit — either way, discouraged.
+ *    on the *enclosing* unit — either way, discouraged. A top-level no-op here does fire
+ *    [CanonicalLog.onUnboundContribution] when that diagnostic hook is installed: it reports
+ *    the mechanism (nothing was bound) and contributing from a sink is discouraged anyway, so
+ *    a test opting into strictness hears about it.
+ *  - A write made through a *captured* [CanonicalLogContext] reference after emit returns is
+ *    counted as a late write ([CanonicalFields.LATE_WRITE_COUNT], one WARN per unit,
+ *    [CanonicalLog.onLateWrite]).
  *  - A work unit opened inside emit nests under the enclosing unit (top-level if none),
  *    never under the finalized one, and emits its own line normally.
  *  - Logging through an appender that itself contributes canonical fields cannot recurse:
@@ -314,6 +320,7 @@ public class CanonicalWorkUnitScope internal constructor(
     private val previousMdc: String?,
     private val startNs: Long,
 ) {
+
     /**
      * Classify how the work terminated, using elapsed time since [openCanonicalWorkUnit]:
      * `null` → [Outcome.Completed], a [CancellationException] → [Outcome.Cancelled], else
@@ -466,6 +473,12 @@ private fun safeEmit(emit: EmitFn, ctx: CanonicalLogContext) {
             ctx.workUnit.id,
             emitEx,
         )
+    } finally {
+        // The writers took their snapshots inside emit(); anything arriving from here on missed
+        // the line, so mark the context finalized and let those writes be counted/warned about
+        // rather than vanishing (todo 049). Set even when emit threw — the line is gone either
+        // way, so a later write is just as lost.
+        ctx.finalized = true
     }
 }
 
