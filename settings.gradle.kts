@@ -7,6 +7,7 @@ dependencyResolutionManagement {
 }
 
 include(
+    "canonical-log-bom",
     "canonical-log-core",
     "canonical-log-okhttp",
     "canonical-log-okhttp-spring-boot-starter",
