@@ -1,5 +1,6 @@
 package io.github.alexhumphreys.canonicallog.test
 
+import ch.qos.logback.classic.Logger as LogbackLogger
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
@@ -66,6 +67,27 @@ class RecordingCanonicalAppenderTest : DescribeSpec({
                 } finally {
                     stop.set(true)
                     hammer.join()
+                }
+            }
+        }
+
+        it("keeps MDC captured on the producer thread, not the reading thread") {
+            RecordingCanonicalAppender.attach().use { appender ->
+                // Logback captures an event's MDC map lazily: the FIRST thread to call
+                // getMDCPropertyMap() snapshots its own thread's MDC onto the event, permanently.
+                // The recording appender runs before the event bubbles to any parent appender, so
+                // the polling test thread (empty MDC) can win that race and blank the line's
+                // fields for good — it stays recorded but unmatchable. Additivity is off here to
+                // remove the root console appender, which otherwise forces the capture on the
+                // producer thread first and hides the race on an unloaded machine.
+                val canonicalLogger =
+                    LoggerFactory.getLogger(RecordingCanonicalAppender.CANONICAL_LOGGER_NAME) as LogbackLogger
+                canonicalLogger.isAdditive = false
+                try {
+                    thread { emit("produced", mapOf("url_path" to "/produced")) }.join()
+                    appender.events().single().mdcPropertyMap["url_path"] shouldBe "/produced"
+                } finally {
+                    canonicalLogger.isAdditive = true
                 }
             }
         }

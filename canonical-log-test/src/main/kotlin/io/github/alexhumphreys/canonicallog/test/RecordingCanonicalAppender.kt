@@ -60,7 +60,7 @@ public class RecordingCanonicalAppender private constructor(
          */
         public fun attach(loggerName: String = CANONICAL_LOGGER_NAME): RecordingCanonicalAppender {
             val logger = LoggerFactory.getLogger(loggerName) as LogbackLogger
-            val appender = ListAppender<ILoggingEvent>().also { it.start() }
+            val appender = DeferredProcessingListAppender().also { it.start() }
             logger.addAppender(appender)
             logger.level = Level.INFO
             return RecordingCanonicalAppender(logger, appender)
@@ -139,6 +139,27 @@ public class RecordingCanonicalAppender private constructor(
     // and drop any trailing null a racing append may have left visible before its element write
     // became visible.
     private fun snapshot(): List<ILoggingEvent> = ArrayList(appender.list).filterNotNull()
+}
+
+/**
+ * A [ListAppender] that calls `prepareForDeferredProcessing()` on the producer thread.
+ *
+ * Logback captures an event's MDC map *lazily*: the first caller of
+ * `ILoggingEvent.getMDCPropertyMap()` snapshots whatever MDC its **own** thread holds and caches
+ * that map on the event forever. A plain `ListAppender` never forces that capture, so the poll
+ * loop in [RecordingCanonicalAppender.awaitLine] — running on the test thread, whose MDC is empty
+ * — could win the race and permanently blank the fields of a line the producer thread had already
+ * populated. The line was then recorded but unmatchable, failing only as a timeout on loaded CI.
+ *
+ * Forcing the capture at append time binds the MDC snapshot to the emitting thread, which is the
+ * only thread that has the right one. (This is the same call logback's own `AsyncAppender` makes
+ * before handing an event across threads.)
+ */
+private class DeferredProcessingListAppender : ListAppender<ILoggingEvent>() {
+    override fun append(eventObject: ILoggingEvent) {
+        eventObject.prepareForDeferredProcessing()
+        super.append(eventObject)
+    }
 }
 
 /**
