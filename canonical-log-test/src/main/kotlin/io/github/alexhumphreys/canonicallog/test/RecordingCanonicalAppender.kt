@@ -91,11 +91,13 @@ public class RecordingCanonicalAppender private constructor(
                 matches.size == 1 -> return canonicalFields(matches.single())
                 matches.size > 1 -> error(
                     "expected exactly one canonical line matching the predicate, found ${matches.size} " +
-                        "(a field-bleed regression, or the predicate is not specific enough)",
+                        "(a field-bleed regression, or the predicate is not specific enough)" +
+                        describe(matches),
                 )
                 System.currentTimeMillis() >= deadline -> error(
                     "no canonical line matched the predicate within ${timeoutMs}ms " +
-                        "(saw ${canonicalEvents().size} canonical line(s) total)",
+                        "(saw ${canonicalEvents().size} canonical line(s) total)" +
+                        describe(canonicalEvents()),
                 )
                 else -> Thread.sleep(POLL_INTERVAL_MS)
             }
@@ -130,6 +132,19 @@ public class RecordingCanonicalAppender private constructor(
         logger.detachAppender(appender)
         appender.stop()
     }
+
+    // A predicate that matches nothing is ambiguous on its own: the line may never have been
+    // emitted, or it may be there with fields the predicate did not expect. Dumping what was
+    // actually recorded separates those two without a debugger — and, since a line's fields can
+    // be blanked by an MDC-capture race, shows an empty field map for what it is.
+    private fun describe(events: List<ILoggingEvent>): String =
+        if (events.isEmpty()) {
+            ""
+        } else {
+            events.joinToString(prefix = "; recorded lines: ", separator = ", ") { event ->
+                "[${event.message}] ${canonicalFields(event)}"
+            }
+        }
 
     private fun canonicalEvents(): List<ILoggingEvent> =
         snapshot().filter { it.loggerName == CANONICAL_LOGGER_NAME }
