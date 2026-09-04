@@ -74,6 +74,18 @@ subprojects {
 
     apply(plugin = "org.jetbrains.kotlin.jvm")
 
+    // Spring Boot's BOM manages the org.jetbrains.kotlin:* coordinates, and
+    // io.spring.dependency-management applies that to *every* configuration in the module
+    // — including the Kotlin compiler's own classpath. When Boot's managed Kotlin version
+    // drifts from the Kotlin Gradle plugin's, the compiler classpath ends up mixing
+    // kotlin-compiler-embeddable at Boot's version with the scripting artifacts KGP pins
+    // at its own, and compileKotlin dies with NoClassDefFoundError deep inside the
+    // compiler. Pinning kotlin.version to the plugin's version hands Kotlin back to KGP,
+    // so a Spring Boot bump and a Kotlin bump stop being coupled.
+    plugins.withId("io.spring.dependency-management") {
+        extra["kotlin.version"] = rootProject.libs.versions.kotlin.get()
+    }
+
     extensions.configure<JavaPluginExtension> {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(25))
