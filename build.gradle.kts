@@ -3,6 +3,11 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaToolchainService
 import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.JavaPlatform
+import com.vanniktech.maven.publish.KotlinJvm
+import com.vanniktech.maven.publish.Platform
+import com.vanniktech.maven.publish.MavenPublishBaseExtension
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -11,6 +16,8 @@ plugins {
     alias(libs.plugins.spring.dep.mgmt) apply false
     alias(libs.plugins.axion.release)
     alias(libs.plugins.pitest) apply false
+    alias(libs.plugins.dokka) apply false
+    alias(libs.plugins.maven.publish) apply false
 }
 
 // Version is derived from git tags by axion-release. On a tagged commit this is a
@@ -26,6 +33,93 @@ scmVersion {
 
 val computedVersion = scmVersion.version
 
+val DEFAULT_POM_DESCRIPTION =
+    "Canonical log lines for JVM services: one wide, structured event per unit of work."
+
+// Published to Maven Central via the Sonatype Central Portal, under the
+// io.github.alexhumphreys namespace (verified through the GitHub account of the same
+// name). Central is the channel that matters for consumers: `mavenCentral()` resolves it
+// with no repo declaration and no credentials, unlike GitHub Packages, which requires
+// every consumer to add a repo *and* a PAT. The GitHub Packages repository is kept as a
+// secondary mirror.
+//
+// Central's rules that shape this: releases are immutable (a version can never be replaced
+// or deleted), and every artifact needs a sources jar, a javadoc jar, a GPG signature, and
+// a POM carrying name/description/url/licenses/developers/scm. Anything missing gets the
+// whole bundle rejected at validation. `platform` is KotlinJvm for the code modules and
+// JavaPlatform for the BOM, which ships a POM only.
+fun Project.configureCentralPublishing(platform: Platform, pomDescription: String) {
+    apply(plugin = "com.vanniktech.maven.publish.base")
+
+    // Write the resolved version into the POM for every dependency. The Spring deps are declared
+    // without one (the catalog leaves the version to Boot's BOM), so without this they publish as
+    // <dependency> entries with no <version> — resolvable only through the dependencyManagement
+    // block io.spring.dependency-management used to append, which we turn off above. Resolving
+    // them here is what makes each POM self-contained. Skipped for the BOM: a java-platform has
+    // no resolvable runtimeClasspath, and its constraints already carry explicit versions.
+    if (platform !is JavaPlatform) {
+        extensions.configure<PublishingExtension> {
+            publications.withType<MavenPublication>().configureEach {
+                versionMapping {
+                    usage("java-api") { fromResolutionOf("runtimeClasspath") }
+                    usage("java-runtime") { fromResolutionResult() }
+                }
+            }
+        }
+    }
+
+    extensions.configure<MavenPublishBaseExtension> {
+        configure(platform)
+
+        publishToMavenCentral(automaticRelease = false)
+
+        // Reads ORG_GRADLE_PROJECT_signingInMemoryKey / ...KeyId / ...Password from the
+        // environment; a no-op locally where those are unset, so `./gradlew build` and the
+        // GitHub Packages publish keep working without a key.
+        if (providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent) {
+            signAllPublications()
+        }
+
+        pom {
+            name.set(this@configureCentralPublishing.name)
+            description.set(pomDescription)
+            url.set("https://github.com/alexhumphreys/canonical-log")
+            licenses {
+                license {
+                    name.set("The Apache License, Version 2.0")
+                    url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                }
+            }
+            developers {
+                developer {
+                    id.set("alexhumphreys")
+                    name.set("Alex Humphreys")
+                    url.set("https://github.com/alexhumphreys")
+                }
+            }
+            scm {
+                url.set("https://github.com/alexhumphreys/canonical-log")
+                connection.set("scm:git:https://github.com/alexhumphreys/canonical-log.git")
+                developerConnection.set("scm:git:ssh://git@github.com/alexhumphreys/canonical-log.git")
+            }
+        }
+    }
+
+    extensions.configure<PublishingExtension> {
+        repositories {
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/alexhumphreys/canonical-log")
+                credentials {
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
+                }
+            }
+        }
+    }
+}
+
+
 subprojects {
     group = "io.github.alexhumphreys"
     version = computedVersion
@@ -37,8 +131,6 @@ subprojects {
     // prefix check further down, which would otherwise treat it as a code module.
     if (name == "canonical-log-bom") {
         apply(plugin = "java-platform")
-        apply(plugin = "maven-publish")
-
         dependencies {
             constraints {
                 // Every library module except the BOM itself, at this build's version.
@@ -51,25 +143,10 @@ subprojects {
                     .forEach { add("api", "io.github.alexhumphreys:$it:$computedVersion") }
             }
         }
-
-        extensions.configure<PublishingExtension> {
-            publications {
-                create<MavenPublication>("maven") {
-                    from(components["javaPlatform"])
-                }
-            }
-            repositories {
-                maven {
-                    name = "GitHubPackages"
-                    url = uri("https://maven.pkg.github.com/alexhumphreys/canonical-log")
-                    credentials {
-                        username = System.getenv("GITHUB_ACTOR")
-                        password = System.getenv("GITHUB_TOKEN")
-                    }
-                }
-            }
-        }
-
+        configureCentralPublishing(
+            JavaPlatform(),
+            "Bill of materials aligning the versions of all canonical-log modules.",
+        )
         return@subprojects
     }
 
@@ -205,37 +282,11 @@ subprojects {
             }
         }
 
-        extensions.configure<JavaPluginExtension> {
-            withSourcesJar()
-        }
-        extensions.configure<PublishingExtension> {
-            publications {
-                create<MavenPublication>("maven") {
-                    afterEvaluate { from(components["java"]) }
-
-                    // Write the resolved version into the POM for every dependency. The Spring
-                    // deps are declared without one (the catalog leaves the version to Boot's
-                    // BOM), so without this they publish as <dependency> entries with no
-                    // <version> — resolvable only via the dependencyManagement block the plugin
-                    // used to append. Resolving them here makes each POM self-contained, which
-                    // is what lets that block go.
-                    versionMapping {
-                        usage("java-api") { fromResolutionOf("runtimeClasspath") }
-                        usage("java-runtime") { fromResolutionResult() }
-                    }
-                }
-            }
-            repositories {
-                maven {
-                    name = "GitHubPackages"
-                    url = uri("https://maven.pkg.github.com/alexhumphreys/canonical-log")
-                    credentials {
-                        username = System.getenv("GITHUB_ACTOR")
-                        password = System.getenv("GITHUB_TOKEN")
-                    }
-                }
-            }
-        }
+        apply(plugin = "org.jetbrains.dokka")
+        configureCentralPublishing(
+            KotlinJvm(javadocJar = JavadocJar.Dokka("dokkaGeneratePublicationHtml")),
+            description ?: DEFAULT_POM_DESCRIPTION,
+        )
     }
 }
 
