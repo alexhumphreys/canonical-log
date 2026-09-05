@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaToolchainService
+import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -84,6 +85,19 @@ subprojects {
     // so a Spring Boot bump and a Kotlin bump stop being coupled.
     plugins.withId("io.spring.dependency-management") {
         extra["kotlin.version"] = rootProject.libs.versions.kotlin.get()
+
+        // Don't copy Spring Boot's BOM into our own published POMs. By default the plugin
+        // appends every managed version as a <dependencyManagement> block, which for a starter
+        // is several hundred entries of someone else's version policy — including oddities like
+        // kotlin-test-js with a klib type. Consumers never apply it (Maven inherits
+        // dependencyManagement only from a parent or an imported BOM, and Gradle reads it only
+        // for platform() modules), so it is inert weight that misrepresents what we manage.
+        // Resolution of our own build is unaffected; this only touches POM generation.
+        extensions.configure<DependencyManagementExtension> {
+            generatedPomCustomization {
+                enabled(false)
+            }
+        }
     }
 
     extensions.configure<JavaPluginExtension> {
@@ -198,6 +212,17 @@ subprojects {
             publications {
                 create<MavenPublication>("maven") {
                     afterEvaluate { from(components["java"]) }
+
+                    // Write the resolved version into the POM for every dependency. The Spring
+                    // deps are declared without one (the catalog leaves the version to Boot's
+                    // BOM), so without this they publish as <dependency> entries with no
+                    // <version> — resolvable only via the dependencyManagement block the plugin
+                    // used to append. Resolving them here makes each POM self-contained, which
+                    // is what lets that block go.
+                    versionMapping {
+                        usage("java-api") { fromResolutionOf("runtimeClasspath") }
+                        usage("java-runtime") { fromResolutionResult() }
+                    }
                 }
             }
             repositories {
