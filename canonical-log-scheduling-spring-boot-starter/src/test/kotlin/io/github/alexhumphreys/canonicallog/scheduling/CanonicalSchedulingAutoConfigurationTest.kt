@@ -26,6 +26,11 @@ import org.springframework.scheduling.annotation.Scheduled
  * deterministic scheduled-job line to match — [RecordingCanonicalAppender.awaitLine] observes it
  * off the scheduler thread (await + snapshot, no `ConcurrentModificationException`) and asserts
  * exactly one.
+ *
+ * The appender is attached from a context initializer rather than after `run()`. A scheduled job
+ * is the one producer that starts itself: attaching after `run()` races the scheduler, and a tick
+ * that fires first is emitted to a logger with no recording appender and lost for good — which
+ * `awaitLine` can only report as a timeout, never ride out.
  */
 class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
 
@@ -35,9 +40,12 @@ class CanonicalSchedulingAutoConfigurationTest : DescribeSpec({
     beforeSpec {
         app = SpringApplicationBuilder(SchedulingTestApp::class.java)
             .web(org.springframework.boot.WebApplicationType.NONE)
+            // Attach from an initializer rather than after run(). Boot sets up logback during
+            // ApplicationEnvironmentPreparedEvent, well before initializers run, so this is late
+            // enough not to be cleared — and it runs before the context refreshes, so it is also
+            // before the scheduler starts and the ticker can possibly fire.
+            .initializers({ _ -> appender = RecordingCanonicalAppender.attach() })
             .run()
-        // Attach AFTER run() so boot's logback init doesn't clear the appender.
-        appender = RecordingCanonicalAppender.attach()
     }
 
     afterSpec {
@@ -78,11 +86,15 @@ open class SchedulingTestApp {
 }
 
 open class TickerJob {
-    // Fire once, well after the appender is attached: a single deterministic canonical line lets
-    // the shared-appender read assert exactly-one (a repeating ticker would produce many
-    // identical scheduled_job lines and defeat that check). The long fixed delay parks the next
-    // run an hour out, past the test window.
-    @Scheduled(fixedDelayString = "3600000", initialDelayString = "300")
+    // Fire once: a single deterministic canonical line lets the shared-appender read assert
+    // exactly-one (a repeating ticker would produce many identical scheduled_job lines and defeat
+    // that check). The long fixed delay parks the next run an hour out, past the test window.
+    //
+    // No initial delay on purpose. The appender is attached from a context initializer, so it is
+    // in place before the scheduler can start — there is no window to wait out. A delay here
+    // would only paper over an attach that happens too late, and would turn that back into a
+    // timing flake rather than a deterministic failure.
+    @Scheduled(fixedDelayString = "3600000", initialDelayString = "0")
     open fun tick() {
         CanonicalLog.put("tick_field", "on")
     }
