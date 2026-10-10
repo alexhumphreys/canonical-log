@@ -6,12 +6,28 @@ import io.github.alexhumphreys.canonicallog.currentCanonicalContext
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import jakarta.servlet.FilterChain
+import org.slf4j.MDC
 
 /** Test writer that keeps snapshots in memory instead of logging. */
 private class CapturingLineWriter : CanonicalLineWriter {
     val snapshots: MutableList<Map<String, Any>> = mutableListOf()
     override fun write(context: CanonicalLogContext) {
         snapshots += context.snapshot()
+    }
+}
+
+/**
+ * Records what the *emitting thread* looks like at write time: the MDC `work_unit_id` and the
+ * bound canonical context. The canonical line already carries `work_unit_id` as a field, so a
+ * value still in MDC here is rendered a second time by MDC-including encoders (logstash's
+ * `LogstashEncoder` does by default) — a duplicate JSON key.
+ */
+private class AmbientObservingLineWriter : CanonicalLineWriter {
+    val mdcAtWrite: MutableList<String?> = mutableListOf()
+    val contextAtWrite: MutableList<CanonicalLogContext?> = mutableListOf()
+    override fun write(context: CanonicalLogContext) {
+        mdcAtWrite += MDC.get("work_unit_id")
+        contextAtWrite += currentCanonicalContext()
     }
 }
 
@@ -102,6 +118,49 @@ class CanonicalLogServletFilterTest : DescribeSpec({
             chainRan shouldBe true
             contextDuringChain shouldBe null
             writer.snapshots.size shouldBe 0
+        }
+
+        // Lifecycle reentrancy contract (todo 038): emit observes a finalized line with the unit
+        // *not* bound. The sync and throwing paths used to emit before `scope.unbind()`, so the
+        // canonical event carried `work_unit_id` in MDC as well as on the line itself.
+        it("emits a synchronous request's line with the unit unbound (no work_unit_id in MDC)") {
+            val writer = AmbientObservingLineWriter()
+            val fake = FakeRequest("GET", "/sync", responseStatus = 200)
+            CanonicalLogServletFilter(writer = writer)
+                .doFilter(fake.request, fake.response, FilterChain { _, _ -> })
+
+            writer.mdcAtWrite shouldBe listOf(null)
+            writer.contextAtWrite shouldBe listOf(null)
+        }
+
+        it("emits a throwing request's line with the unit unbound (no work_unit_id in MDC)") {
+            val writer = AmbientObservingLineWriter()
+            val fake = FakeRequest("GET", "/boom", responseStatus = 500)
+            runCatching {
+                CanonicalLogServletFilter(writer = writer)
+                    .doFilter(fake.request, fake.response, FilterChain { _, _ -> error("kaboom") })
+            }
+
+            writer.mdcAtWrite shouldBe listOf(null)
+            writer.contextAtWrite shouldBe listOf(null)
+        }
+
+        it("emits with the enclosing request's binding, not its own, when nested under another unit") {
+            val writer = AmbientObservingLineWriter()
+            val outer = FakeRequest("GET", "/outer", responseStatus = 200)
+            val inner = FakeRequest("GET", "/inner", responseStatus = 200)
+            var outerId: String? = null
+            // Distinct requests, so the once-per-request attribute guard does not skip the inner one.
+            CanonicalLogServletFilter(writer = CapturingLineWriter())
+                .doFilter(outer.request, outer.response, FilterChain { _, _ ->
+                    outerId = currentCanonicalContext()?.workUnit?.id
+                    CanonicalLogServletFilter(writer = writer)
+                        .doFilter(inner.request, inner.response, FilterChain { _, _ -> })
+                })
+
+            (outerId == null) shouldBe false
+            writer.mdcAtWrite shouldBe listOf(outerId)
+            writer.contextAtWrite.single()?.workUnit?.id shouldBe outerId
         }
 
         it("unbinds the threadlocal after a synchronous request") {

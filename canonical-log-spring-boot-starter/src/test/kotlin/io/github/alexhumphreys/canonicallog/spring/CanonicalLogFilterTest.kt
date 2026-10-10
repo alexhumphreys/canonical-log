@@ -6,13 +6,19 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import io.github.alexhumphreys.canonicallog.CanonicalLogSampler
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldMatch
 import jakarta.servlet.FilterChain
+import net.logstash.logback.encoder.LogstashEncoder
 import net.logstash.logback.marker.MapEntriesAppendingMarker
 import org.slf4j.LoggerFactory
 import org.slf4j.Marker
 import org.springframework.mock.web.MockAsyncContext
+import tools.jackson.core.JsonToken
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.databind.json.JsonMapper
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 
@@ -73,6 +79,40 @@ private fun attachLibraryWarnAppender(): ListAppender<ILoggingEvent> {
 private fun detachLibraryWarnAppender(appender: ListAppender<ILoggingEvent>) {
     (LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog") as LogbackLogger)
         .detachAppender(appender)
+}
+
+/**
+ * Render the last canonical event exactly as the documented production config does — a
+ * default `LogstashEncoder` (MDC included) — and return its top-level keys in order, read with
+ * a strict-duplicate-detecting parser (so a repeated key fails here as it would in a strict
+ * log pipeline). Keys are collected first so a failure message can show the whole line.
+ */
+private fun encodeLastCanonicalLine(appender: ListAppender<ILoggingEvent>): Pair<String, List<String>> {
+    val event = appender.list.last { it.loggerName == "canonical" }
+    val encoder = LogstashEncoder().apply {
+        context = (LoggerFactory.getLogger("canonical") as LogbackLogger).loggerContext
+        start()
+    }
+    val json = try {
+        String(encoder.encode(event), Charsets.UTF_8).trim()
+    } finally {
+        encoder.stop()
+    }
+    val keys = mutableListOf<String>()
+    JsonMapper.builder().build().createParser(json).use { parser ->
+        check(parser.nextToken() == JsonToken.START_OBJECT) { "not a JSON object: $json" }
+        while (parser.nextToken() == JsonToken.PROPERTY_NAME) {
+            keys += parser.currentName()
+            parser.nextToken()
+            parser.skipChildren()
+        }
+    }
+    return json to keys
+}
+
+/** Same line, parsed with Jackson's STRICT_DUPLICATE_DETECTION on; throws on a repeated key. */
+private fun parseStrict(json: String) {
+    JsonMapper.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build().readTree(json)
 }
 
 class CanonicalLogFilterTest : DescribeSpec({
@@ -186,6 +226,69 @@ class CanonicalLogFilterTest : DescribeSpec({
             CanonicalLogFilter().doFilter(req, res, chain)
             (mdcDuringChain == null) shouldBe false
             org.slf4j.MDC.get("work_unit_id") shouldBe null
+        }
+
+        // Regression: with the default LogstashEncoder (which includes MDC), the sync and
+        // throwing paths emitted while the unit's id was still mirrored into MDC, so every
+        // canonical line carried `work_unit_id` twice — once from MDC, once as a line field.
+        it("renders a synchronous request's canonical line through LogstashEncoder with no duplicate keys") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/sync")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                var workUnitId: String? = null
+                CanonicalLogFilter().doFilter(req, res) { _, _ ->
+                    workUnitId = org.slf4j.MDC.get("work_unit_id")
+                }
+                val (json, keys) = encodeLastCanonicalLine(appender)
+                withClue(json) {
+                    keys.count { it == "work_unit_id" } shouldBe 1
+                    keys.groupingBy { it }.eachCount().filterValues { it > 1 } shouldBe emptyMap()
+                    parseStrict(json)
+                    json shouldContain "\"work_unit_id\":\"$workUnitId\""
+                }
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("renders a throwing request's canonical line through LogstashEncoder with no duplicate keys") {
+            val appender = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/boom")
+                val res = MockHttpServletResponse().apply { status = 500 }
+                runCatching {
+                    CanonicalLogFilter().doFilter(req, res) { _, _ -> error("kaboom") }
+                }
+                val (json, keys) = encodeLastCanonicalLine(appender)
+                withClue(json) {
+                    keys.count { it == "work_unit_id" } shouldBe 1
+                    keys.groupingBy { it }.eachCount().filterValues { it > 1 } shouldBe emptyMap()
+                    parseStrict(json)
+                }
+            } finally {
+                detachAppender(appender)
+            }
+        }
+
+        it("still stamps work_unit_id from MDC on ordinary lines logged inside the request") {
+            val appLogAppender = ListAppender<ILoggingEvent>().also { it.start() }
+            val appLogger = LoggerFactory.getLogger("sample-app") as LogbackLogger
+            appLogger.addAppender(appLogAppender)
+            appLogger.level = Level.INFO
+            val canonical = attachAppender()
+            try {
+                val req = MockHttpServletRequest("GET", "/sync")
+                val res = MockHttpServletResponse().apply { status = 200 }
+                CanonicalLogFilter().doFilter(req, res) { _, _ -> appLogger.info("ordinary") }
+                val lineId = lastCanonicalSnapshot(canonical)["work_unit_id"]
+                appLogAppender.list.single().mdcPropertyMap["work_unit_id"] shouldBe lineId
+                canonical.list.last { it.loggerName == "canonical" }
+                    .mdcPropertyMap["work_unit_id"] shouldBe null
+            } finally {
+                appLogger.detachAppender(appLogAppender)
+                detachAppender(canonical)
+            }
         }
 
         it("clears MDC even when the handler throws") {

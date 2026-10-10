@@ -32,10 +32,13 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  *     inline; if `request.isAsyncStarted` is true, registers a [CanonicalLogAsyncEmitListener]
  *     that defers enrich + emit until the async cycle completes / errors / times out.
  *  4. Unbinds the threadlocal + MDC on *this* thread in `finally`, regardless of when
- *     enrich/emit ultimately run — async emit happens later, on a container thread.
+ *     enrich/emit ultimately run — async emit happens later, on a container thread. The
+ *     inline (sync / thrown) emit runs *after* that unbind, so the emitted line never sees
+ *     its own unit bound — in particular its `work_unit_id` is not also in MDC, which
+ *     MDC-rendering encoders would otherwise write as a duplicate JSON key.
  *
  * Emit-exactly-once: the sync and async paths are mutually exclusive (a throwing chain emits
- * from the catch arm and never registers the listener; a returned-and-async chain hands emit
+ * inline after unbind and never registers the listener; a returned-and-async chain hands emit
  * to the listener; otherwise emit is inline), and the listener's own [AtomicBoolean] absorbs
  * the multiple terminal callbacks containers may fire.
  *
@@ -66,7 +69,7 @@ public fun runCanonicalHttpRequest(
     val scope = openCanonicalWorkUnit(adapter, exchange)
     val ctx = scope.context
 
-    fun emit(error: Throwable?) {
+    fun enrich(error: Throwable?) {
         // Cancellation (client disconnect, async timeout) is not a failure — the scope maps it
         // to Outcome.Cancelled (cancelled=true, no error=true), the same classification core's
         // withCanonicalLog uses, so the servlet and suspend entry points tell the same story.
@@ -75,6 +78,9 @@ public fun runCanonicalHttpRequest(
             ctx.put(CanonicalFields.CANCEL_REASON, "async_timeout")
         }
         scope.enrich(adapter, exchange, outcome)
+    }
+
+    fun publish() {
         val keep = try {
             sampler.shouldEmit(ctx)
         } catch (e: Exception) {
@@ -90,19 +96,32 @@ public fun runCanonicalHttpRequest(
         }
     }
 
-    try {
+    // Sync / thrown path: enrich while still bound (as withCanonicalLogBlocking does), then
+    // unbind, then emit — so emit observes the finalized unit *not* bound (todo 038). Emitting
+    // before unbind left the unit's id mirrored in MDC, so MDC-rendering encoders (the default
+    // LogstashEncoder) wrote `work_unit_id` twice on the canonical line — once from MDC, once
+    // as a line field — producing invalid duplicate-key JSON.
+    var emitInline = true
+    val chainError: Throwable? = try {
         invokeChain()
         if (request.isAsyncStarted) {
-            request.asyncContext.addListener(CanonicalLogAsyncEmitListener(::emit))
+            request.asyncContext.addListener(CanonicalLogAsyncEmitListener { error ->
+                enrich(error)
+                publish()
+            })
+            emitInline = false
         } else {
-            emit(error = null)
+            enrich(error = null)
         }
+        null
     } catch (t: Throwable) {
-        emit(error = t)
-        throw t
+        enrich(error = t)
+        t
     } finally {
         scope.unbind()
     }
+    if (emitInline) publish()
+    if (chainError != null) throw chainError
 }
 
 /**
