@@ -32,7 +32,7 @@ vocabulary. (The `messaging_*` fields are deliberate string literals, not consta
 
 | Field | Type | Written by | Present |
 | --- | --- | --- | --- |
-| `work_unit_id` | String | adapter `describe` | always; also mirrored into slf4j MDC under the same name for debug-log correlation |
+| `work_unit_id` | String | adapter `describe` | always; also mirrored into slf4j MDC under the same name for debug-log correlation (on ordinary lines only — the canonical line is emitted with the unit unbound, so an MDC-rendering encoder does not write the key twice) |
 | `work_unit_kind` | String | adapter `describe` | always (`http`, `scheduled_job`, `background_job`, `kafka_message`, ...) |
 | `parent_work_unit_id` | String | core entry points | only on nested units — the *immediate* parent's id |
 | `work_unit_depth` | Long | core entry points | only on nested units (1 = inside a top-level unit); absent = top-level |
