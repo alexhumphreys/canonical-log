@@ -27,6 +27,8 @@ axion-release = "1.21.2"
 pitest-gradle = "1.19.0"
 pitest-junit5 = "1.2.3"
 jmh = "1.37"
+dokka = "2.2.0"
+maven-publish = "0.37.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
@@ -148,3 +150,5 @@ spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dep-mgmt = { id = "io.spring.dependency-management", version.ref = "spring-dep-mgmt" }
 axion-release = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion-release" }
 pitest = { id = "info.solidsoft.pitest", version.ref = "pitest-gradle" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }

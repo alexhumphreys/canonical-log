@@ -1,7 +1,7 @@
 name: Release
 
-# Publishes a versioned release to GitHub Maven Packages whenever a PR is merged
-# into main. The version bump (major/minor/patch) is chosen from the merged PR's
+# Publishes a versioned release to Maven Central (Sonatype Central Portal) and, as a
+# secondary mirror, to GitHub Maven Packages, whenever a PR is merged into main. The version bump (major/minor/patch) is chosen from the merged PR's
 # conventional-commit title:
 #   - `feat!:` / `fix!:` / any `type!:` / `BREAKING CHANGE` -> major
 #   - `feat:`                                               -> minor
@@ -70,4 +70,17 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew publish --stacktrace
+        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository --stacktrace
+
+      # Uploads a signed bundle to the Central Portal and leaves it in the PENDING state
+      # (automaticRelease = false in build.gradle.kts). Releasing it is a manual click at
+      # central.sonatype.com — deliberate, because a Central release is irreversible: the
+      # version can never be replaced or deleted. Flip to `publishAndReleaseToMavenCentral`
+      # once the pipeline has proven itself over a few releases.
+      - name: Publish to Maven Central
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew publishToMavenCentral --stacktrace
