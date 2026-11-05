@@ -1,0 +1,16 @@
+public final class io/github/alexhumphreys/canonicallog/resilience4j/CanonicalResilience4j {
+	public static final field INSTANCE Lio/github/alexhumphreys/canonicallog/resilience4j/CanonicalResilience4j;
+	public static final fun attach (Lio/github/resilience4j/bulkhead/Bulkhead;)V
+	public static final fun attach (Lio/github/resilience4j/bulkhead/ThreadPoolBulkhead;)V
+	public static final fun attach (Lio/github/resilience4j/circuitbreaker/CircuitBreaker;)V
+	public static final fun attach (Lio/github/resilience4j/ratelimiter/RateLimiter;)V
+	public static final fun attach (Lio/github/resilience4j/retry/Retry;)V
+	public static final fun attach (Lio/github/resilience4j/timelimiter/TimeLimiter;)V
+	public static final fun register (Lio/github/resilience4j/bulkhead/BulkheadRegistry;)V
+	public static final fun register (Lio/github/resilience4j/bulkhead/ThreadPoolBulkheadRegistry;)V
+	public static final fun register (Lio/github/resilience4j/circuitbreaker/CircuitBreakerRegistry;)V
+	public static final fun register (Lio/github/resilience4j/ratelimiter/RateLimiterRegistry;)V
+	public static final fun register (Lio/github/resilience4j/retry/RetryRegistry;)V
+	public static final fun register (Lio/github/resilience4j/timelimiter/TimeLimiterRegistry;)V
+}
+

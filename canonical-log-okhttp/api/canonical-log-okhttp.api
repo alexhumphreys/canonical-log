@@ -1,0 +1,10 @@
+public final class io/github/alexhumphreys/canonicallog/okhttp/OkHttpCanonicalInterceptor : okhttp3/Interceptor {
+	public fun <init> ()V
+	public fun intercept (Lokhttp3/Interceptor$Chain;)Lokhttp3/Response;
+}
+
+public final class io/github/alexhumphreys/canonicallog/okhttp/RequestTaggingKt {
+	public static final fun withCanonicalContext (Lokhttp3/Request$Builder;Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)Lokhttp3/Request$Builder;
+	public static synthetic fun withCanonicalContext$default (Lokhttp3/Request$Builder;Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;ILjava/lang/Object;)Lokhttp3/Request$Builder;
+}
+

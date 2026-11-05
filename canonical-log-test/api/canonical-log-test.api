@@ -1,0 +1,80 @@
+public final class io/github/alexhumphreys/canonicallog/test/CaptureCanonicalLineKt {
+	public static final fun captureCanonicalLine (Lkotlin/jvm/functions/Function3;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun captureCanonicalLineBlocking (Lkotlin/jvm/functions/Function1;)Lio/github/alexhumphreys/canonicallog/test/CapturedCanonicalLine;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/CapturedCanonicalLine {
+	public final fun get (Ljava/lang/String;)Ljava/lang/Object;
+	public final fun getException ()Ljava/lang/Throwable;
+	public final fun getFields ()Ljava/util/Map;
+	public final fun getOutcome ()Lio/github/alexhumphreys/canonicallog/Outcome;
+	public final fun getResult ()Ljava/lang/Object;
+	public final fun getWorkUnit ()Lio/github/alexhumphreys/canonicallog/WorkUnit;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/LostCanonicalContributionException : java/lang/AssertionError {
+	public final fun getLost ()Lio/github/alexhumphreys/canonicallog/test/LostContribution;
+}
+
+public abstract class io/github/alexhumphreys/canonicallog/test/LostContribution {
+	public abstract fun getKey ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/LostContribution$LateWrite : io/github/alexhumphreys/canonicallog/test/LostContribution {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lio/github/alexhumphreys/canonicallog/test/LostContribution$LateWrite;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/test/LostContribution$LateWrite;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/test/LostContribution$LateWrite;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getKey ()Ljava/lang/String;
+	public final fun getWorkUnitId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/LostContribution$Unbound : io/github/alexhumphreys/canonicallog/test/LostContribution {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lio/github/alexhumphreys/canonicallog/test/LostContribution$Unbound;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/test/LostContribution$Unbound;Ljava/lang/String;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/test/LostContribution$Unbound;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender : java/lang/AutoCloseable {
+	public static final field CANONICAL_LOGGER_NAME Ljava/lang/String;
+	public static final field Companion Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender$Companion;
+	public final fun assertNoLine (JLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun assertNoLine$default (Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun awaitLine (JLkotlin/jvm/functions/Function1;)Ljava/util/Map;
+	public static synthetic fun awaitLine$default (Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/util/Map;
+	public final fun clear ()V
+	public fun close ()V
+	public final fun events ()Ljava/util/List;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender$Companion {
+	public final fun attach (Ljava/lang/String;)Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender;
+	public static synthetic fun attach$default (Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender$Companion;Ljava/lang/String;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppenderKt {
+	public static final fun canonicalFields (Lch/qos/logback/classic/spi/ILoggingEvent;)Ljava/util/Map;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/StrictContributionsKt {
+	public static final fun failOnLateWrites (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+	public static final fun failOnLostContributions (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+	public static final fun failOnUnboundContributions (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+	public static final fun recordLostContributions (Lkotlin/jvm/functions/Function0;)Ljava/util/List;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/TestCanonicalLogContextKt {
+	public static final fun testCanonicalLogContext (Ljava/lang/String;Ljava/lang/String;)Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+	public static synthetic fun testCanonicalLogContext$default (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+	public static final fun withBoundCanonicalContext (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+}
+

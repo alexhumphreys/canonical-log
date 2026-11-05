@@ -1,0 +1,7 @@
+public final class io/github/alexhumphreys/canonicallog/logstash/LogstashCanonicalLineWriter : io/github/alexhumphreys/canonicallog/CanonicalLineWriter {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun write (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)V
+}
+

@@ -1,0 +1,10 @@
+public final class io/github/alexhumphreys/canonicallog/sqs/SqsMessageWorkUnitAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public fun <init> (Ljava/lang/String;)V
+	public synthetic fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun describe (Lsoftware/amazon/awssdk/services/sqs/model/Message;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public synthetic fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lsoftware/amazon/awssdk/services/sqs/model/Message;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public synthetic fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lsoftware/amazon/awssdk/services/sqs/model/Message;)V
+}
+

@@ -1,0 +1,7 @@
+public final class io/github/alexhumphreys/canonicallog/otel/OtelSeedingAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;)V
+	public fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+}
+

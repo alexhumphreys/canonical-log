@@ -1,0 +1,16 @@
+public class io/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalAutoConfiguration {
+	public static final field Companion Lio/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalAutoConfiguration$Companion;
+	public fun <init> ()V
+	public static final fun jdbcCanonicalBeanPostProcessor ()Lio/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalBeanPostProcessor;
+}
+
+public final class io/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalAutoConfiguration$Companion {
+	public final fun jdbcCanonicalBeanPostProcessor ()Lio/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalBeanPostProcessor;
+}
+
+public final class io/github/alexhumphreys/canonicallog/jdbc/spring/JdbcCanonicalBeanPostProcessor : org/springframework/beans/factory/config/BeanPostProcessor, org/springframework/core/Ordered {
+	public fun <init> ()V
+	public fun getOrder ()I
+	public fun postProcessAfterInitialization (Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;
+}
+
