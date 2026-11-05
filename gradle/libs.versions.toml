@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.4.21"
 kotlinx-coroutines = "1.11.0"
-spring-boot = "4.1.1"
+spring-boot = "4.1.2"
 spring-dep-mgmt = "1.1.7"
 kotest = "6.2.5"
 okhttp = "5.5.0"
