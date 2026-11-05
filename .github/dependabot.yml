@@ -10,8 +10,8 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
-    # Release PRs derive their version bump from the PR title, so keep Dependabot's titles
-    # in conventional-commit form: a dependency bump should never look like a `feat:`.
+    # Keep Dependabot's titles in conventional-commit form like every other PR: they feed
+    # the generated release notes, and a dependency bump should never look like a `feat:`.
     commit-message:
       prefix: chore
       include: scope
