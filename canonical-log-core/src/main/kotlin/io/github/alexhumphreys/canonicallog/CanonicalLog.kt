@@ -64,6 +64,19 @@ public object CanonicalLog {
     @Volatile
     public var onLateWrite: ((workUnitId: String, key: String) -> Unit)? = null
 
+    /**
+     * Field-count and value-length bounds applied to every work unit opened from now on (see
+     * [CanonicalLogLimits]). Each context reads this once, at construction, so changing it
+     * doesn't affect units already open.
+     *
+     * Process-wide rather than threaded through every entry point, for the same reason as
+     * `CanonicalLogMdc.enabled`: set it once at startup (or in a test's setup) and leave it.
+     * [CanonicalLogLimits.UNLIMITED] turns the guardrails off.
+     */
+    @JvmStatic
+    @Volatile
+    public var limits: CanonicalLogLimits = CanonicalLogLimits.DEFAULT
+
     @JvmStatic
     public fun put(key: String, value: Any?) {
         val ctx = threadLocalContext.get()

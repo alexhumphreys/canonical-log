@@ -173,6 +173,18 @@ Telemetry never fails the operation it observes; failures are recorded on the li
 | `canonical_log_contributor_error` | Boolean | a contributor (interceptor/listener/event consumer) threw while contributing (swallowed) |
 | `canonical_log_contributor_error_class` | String | FQCN of the contributor exception |
 | `canonical_log_late_write_count` | Long | contributions that arrived after this unit's line was emitted (see below) |
+| `canonical_log_dropped_field_count` | Long | writes dropped because they'd add a new key past the field cap (see below) |
+| `canonical_log_dropped_field_key` | String | the first key the field cap dropped |
+| `canonical_log_truncated_field_count` | Long | string values cut to the value-length limit |
+| `canonical_log_truncated_field_key` | String | the first key whose value was truncated |
+
+**Field guardrails.** `CanonicalLog.limits` (a `CanonicalLogLimits`, set once at startup) bounds
+every work unit at 256 distinct keys and 8192 characters per string value by default. A write
+that would add a 257th key is dropped; a longer string is stored as its prefix. Neither throws;
+both are counted by the markers above. The cap never drops a field the library defines (the
+names on this page) or anything the adapter writes in `enrich`, so a runaway `put` in a loop
+can't cost the line its status code or outcome. That makes it a soft cap: the line can carry
+up to 256 keys plus those. `CanonicalLogLimits.UNLIMITED` turns the guardrails off.
 
 `canonical_log_late_write_count` is the one marker you will **never see on a line**: by
 definition it is written after the line was serialized. It exists so the loss is countable in a
