@@ -1,0 +1,34 @@
+public final class io/github/alexhumphreys/canonicallog/scheduling/CanonicalScheduledTaskObservationHandler : io/micrometer/observation/ObservationHandler {
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun onScopeClosed (Lio/micrometer/observation/Observation$Context;)V
+	public fun onScopeClosed (Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;)V
+	public synthetic fun onScopeOpened (Lio/micrometer/observation/Observation$Context;)V
+	public fun onScopeOpened (Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;)V
+	public synthetic fun onStop (Lio/micrometer/observation/Observation$Context;)V
+	public fun onStop (Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;)V
+	public fun supportsContext (Lio/micrometer/observation/Observation$Context;)Z
+}
+
+public class io/github/alexhumphreys/canonicallog/scheduling/CanonicalSchedulingAutoConfiguration {
+	public fun <init> ()V
+	public fun canonicalLineWriter ()Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;
+	public fun canonicalSchedulingConfigurer (Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;)Lorg/springframework/scheduling/annotation/SchedulingConfigurer;
+}
+
+public final class io/github/alexhumphreys/canonicallog/scheduling/ScheduledJobWorkUnitAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public static final field Companion Lio/github/alexhumphreys/canonicallog/scheduling/ScheduledJobWorkUnitAdapter$Companion;
+	public static final field JOB_DURATION_MS Ljava/lang/String;
+	public static final field JOB_NAME Ljava/lang/String;
+	public static final field WORK_UNIT_KIND Ljava/lang/String;
+	public fun <init> ()V
+	public synthetic fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun describe (Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public synthetic fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public synthetic fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/springframework/scheduling/support/ScheduledTaskObservationContext;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/scheduling/ScheduledJobWorkUnitAdapter$Companion {
+}
+

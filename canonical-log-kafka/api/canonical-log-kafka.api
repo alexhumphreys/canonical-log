@@ -1,0 +1,16 @@
+public final class io/github/alexhumphreys/canonicallog/kafka/CanonicalLoggingProducerKt {
+	public static final fun withCanonicalLogging (Lorg/apache/kafka/clients/producer/Producer;)Lorg/apache/kafka/clients/producer/Producer;
+}
+
+public final class io/github/alexhumphreys/canonicallog/kafka/KafkaRecordWorkUnitAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public fun <init> ()V
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun describe (Lorg/apache/kafka/clients/consumer/ConsumerRecord;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public synthetic fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/apache/kafka/clients/consumer/ConsumerRecord;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public synthetic fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/apache/kafka/clients/consumer/ConsumerRecord;)V
+}
+

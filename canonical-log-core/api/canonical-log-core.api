@@ -1,0 +1,274 @@
+public final class io/github/alexhumphreys/canonicallog/CanonicalFields {
+	public static final field BULKHEAD_REJECTED_COUNT Ljava/lang/String;
+	public static final field CANCELLED Ljava/lang/String;
+	public static final field CANCEL_REASON Ljava/lang/String;
+	public static final field CIRCUIT_BREAKER_FAILURE_COUNT Ljava/lang/String;
+	public static final field CIRCUIT_BREAKER_OPEN_NAME Ljava/lang/String;
+	public static final field CIRCUIT_BREAKER_REJECTED_COUNT Ljava/lang/String;
+	public static final field CONTRIBUTOR_ERROR Ljava/lang/String;
+	public static final field CONTRIBUTOR_ERROR_CLASS Ljava/lang/String;
+	public static final field DB_EXECUTION_COUNT Ljava/lang/String;
+	public static final field DB_EXECUTION_DURATION_MS_TOTAL Ljava/lang/String;
+	public static final field DB_EXECUTION_ERROR_COUNT Ljava/lang/String;
+	public static final field DB_QUERY_COUNT Ljava/lang/String;
+	public static final field DB_SLOW_EXECUTION_COUNT Ljava/lang/String;
+	public static final field DEGRADED Ljava/lang/String;
+	public static final field DEGRADED_REASON Ljava/lang/String;
+	public static final field DROPPED_FIELD_COUNT Ljava/lang/String;
+	public static final field DROPPED_FIELD_KEY Ljava/lang/String;
+	public static final field ENRICH_ERROR Ljava/lang/String;
+	public static final field ENRICH_ERROR_CLASS Ljava/lang/String;
+	public static final field ERROR Ljava/lang/String;
+	public static final field ERROR_CLASS Ljava/lang/String;
+	public static final field ERROR_REASON Ljava/lang/String;
+	public static final field HTTP_CLIENT_4XX_COUNT Ljava/lang/String;
+	public static final field HTTP_CLIENT_5XX_COUNT Ljava/lang/String;
+	public static final field HTTP_CLIENT_ERROR_COUNT Ljava/lang/String;
+	public static final field HTTP_CLIENT_REQUEST_COUNT Ljava/lang/String;
+	public static final field HTTP_CLIENT_REQUEST_DURATION_MS_TOTAL Ljava/lang/String;
+	public static final field HTTP_REQUEST_DURATION_MS Ljava/lang/String;
+	public static final field HTTP_REQUEST_METHOD Ljava/lang/String;
+	public static final field HTTP_RESPONSE_STATUS_CODE Ljava/lang/String;
+	public static final field HTTP_ROUTE Ljava/lang/String;
+	public static final field INSTANCE Lio/github/alexhumphreys/canonicallog/CanonicalFields;
+	public static final field JOB_ATTEMPT Ljava/lang/String;
+	public static final field JOB_ID Ljava/lang/String;
+	public static final field JOB_NAME Ljava/lang/String;
+	public static final field KAFKA_PRODUCE_COUNT Ljava/lang/String;
+	public static final field KAFKA_PRODUCE_DURATION_MS_TOTAL Ljava/lang/String;
+	public static final field KAFKA_PRODUCE_ERROR_COUNT Ljava/lang/String;
+	public static final field LATE_WRITE_COUNT Ljava/lang/String;
+	public static final field MESSAGE Ljava/lang/String;
+	public static final field PARENT_WORK_UNIT_ID Ljava/lang/String;
+	public static final field RATE_LIMITER_REJECTED_COUNT Ljava/lang/String;
+	public static final field RESILIENCE_REJECTED Ljava/lang/String;
+	public static final field RETRY_ATTEMPT_COUNT Ljava/lang/String;
+	public static final field RETRY_EXHAUSTED_COUNT Ljava/lang/String;
+	public static final field RETRY_WAIT_DURATION_MS_TOTAL Ljava/lang/String;
+	public static final field SEED_ERROR Ljava/lang/String;
+	public static final field SEED_ERROR_CLASS Ljava/lang/String;
+	public static final field SPAN_ID Ljava/lang/String;
+	public static final field TIME_LIMITER_TIMEOUT_COUNT Ljava/lang/String;
+	public static final field TRACE_ID Ljava/lang/String;
+	public static final field TRUNCATED_FIELD_COUNT Ljava/lang/String;
+	public static final field TRUNCATED_FIELD_KEY Ljava/lang/String;
+	public static final field TYPE_CONFLICT Ljava/lang/String;
+	public static final field TYPE_CONFLICT_KEY Ljava/lang/String;
+	public static final field TYPE_CONFLICT_TYPE Ljava/lang/String;
+	public static final field URL_PATH Ljava/lang/String;
+	public static final field WORK_UNIT_DEPTH Ljava/lang/String;
+	public static final field WORK_UNIT_ID Ljava/lang/String;
+	public static final field WORK_UNIT_KIND Ljava/lang/String;
+	public static final field X_REQUEST_ID_REJECTED Ljava/lang/String;
+}
+
+public abstract interface class io/github/alexhumphreys/canonicallog/CanonicalLineWriter {
+	public abstract fun write (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLog {
+	public static final field INSTANCE Lio/github/alexhumphreys/canonicallog/CanonicalLog;
+	public static final fun getLimits ()Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;
+	public static final fun getOnLateWrite ()Lkotlin/jvm/functions/Function2;
+	public static final fun getOnUnboundContribution ()Lkotlin/jvm/functions/Function1;
+	public static final fun increment (Ljava/lang/String;)V
+	public static final fun increment (Ljava/lang/String;J)V
+	public static synthetic fun increment$default (Ljava/lang/String;JILjava/lang/Object;)V
+	public static final fun markDegraded (Ljava/lang/String;Ljava/util/Map;)V
+	public static final fun markDegraded (Ljava/lang/String;[Lkotlin/Pair;)V
+	public static final fun markFailed (Ljava/lang/String;Ljava/util/Map;)V
+	public static final fun markFailed (Ljava/lang/String;[Lkotlin/Pair;)V
+	public static final fun put (Ljava/lang/String;Ljava/lang/Object;)V
+	public static final fun setLimits (Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;)V
+	public static final fun setOnLateWrite (Lkotlin/jvm/functions/Function2;)V
+	public static final fun setOnUnboundContribution (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogContext {
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnit;)V
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnit;Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;)V
+	public synthetic fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnit;Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun contains (Ljava/lang/String;)Z
+	public final fun get (Ljava/lang/String;)Ljava/lang/Object;
+	public final fun getWorkUnit ()Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public final fun increment (Ljava/lang/String;)V
+	public final fun increment (Ljava/lang/String;J)V
+	public static synthetic fun increment$default (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/String;JILjava/lang/Object;)V
+	public final fun markDegraded (Ljava/lang/String;Ljava/util/Map;)V
+	public final fun markDegraded (Ljava/lang/String;[Lkotlin/Pair;)V
+	public final fun markFailed (Ljava/lang/String;Ljava/util/Map;)V
+	public final fun markFailed (Ljava/lang/String;[Lkotlin/Pair;)V
+	public final fun put (Ljava/lang/String;Ljava/lang/Object;)V
+	public final fun snapshot ()Ljava/util/Map;
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogElement : kotlin/coroutines/AbstractCoroutineContextElement, kotlinx/coroutines/ThreadContextElement {
+	public static final field Key Lio/github/alexhumphreys/canonicallog/CanonicalLogElement$Key;
+	public final fun getContext ()Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+	public fun restoreThreadContext (Lkotlin/coroutines/CoroutineContext;Lio/github/alexhumphreys/canonicallog/CanonicalLogElement$Restore;)V
+	public synthetic fun restoreThreadContext (Lkotlin/coroutines/CoroutineContext;Ljava/lang/Object;)V
+	public fun updateThreadContext (Lkotlin/coroutines/CoroutineContext;)Lio/github/alexhumphreys/canonicallog/CanonicalLogElement$Restore;
+	public synthetic fun updateThreadContext (Lkotlin/coroutines/CoroutineContext;)Ljava/lang/Object;
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogElement$Key : kotlin/coroutines/CoroutineContext$Key {
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogElement$Restore {
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogElementKt {
+	public static final fun bindCurrentCanonicalContext (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+	public static final fun currentCanonicalContext ()Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogLimits {
+	public static final field Companion Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits$Companion;
+	public static final field DEFAULT Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;
+	public static final field DEFAULT_MAX_FIELDS I
+	public static final field DEFAULT_MAX_VALUE_LENGTH I
+	public static final field UNLIMITED Lio/github/alexhumphreys/canonicallog/CanonicalLogLimits;
+	public fun <init> ()V
+	public fun <init> (I)V
+	public fun <init> (II)V
+	public synthetic fun <init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getMaxFields ()I
+	public final fun getMaxValueLength ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogLimits$Companion {
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalLogMdc {
+	public static final field INSTANCE Lio/github/alexhumphreys/canonicallog/CanonicalLogMdc;
+	public static final field KEY Ljava/lang/String;
+	public final fun getEnabled ()Z
+	public final fun install (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)Ljava/lang/String;
+	public final fun restore (Ljava/lang/String;)V
+	public final fun setEnabled (Z)V
+}
+
+public abstract interface class io/github/alexhumphreys/canonicallog/CanonicalLogSampler {
+	public abstract fun shouldEmit (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)Z
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalMessageKt {
+	public static final fun canonicalLineMessage (Ljava/util/Map;)Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/CanonicalWorkUnitScope {
+	public final fun emit (Lkotlin/jvm/functions/Function1;)V
+	public final fun enrich (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public final fun getContext ()Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;
+	public final fun outcomeFor (Ljava/lang/Throwable;)Lio/github/alexhumphreys/canonicallog/Outcome;
+	public final fun unbind ()V
+}
+
+public final class io/github/alexhumphreys/canonicallog/ContextPropagationKt {
+	public static final fun propagatingCanonicalContext (Ljava/lang/Runnable;)Ljava/lang/Runnable;
+	public static final fun propagatingCanonicalContext (Ljava/util/concurrent/Callable;)Ljava/util/concurrent/Callable;
+	public static final fun propagatingCanonicalContext (Ljava/util/concurrent/Executor;)Ljava/util/concurrent/Executor;
+}
+
+public abstract interface annotation class io/github/alexhumphreys/canonicallog/DelicateCanonicalLogApi : java/lang/annotation/Annotation {
+}
+
+public final class io/github/alexhumphreys/canonicallog/JsonCanonicalLineWriter : io/github/alexhumphreys/canonicallog/CanonicalLineWriter {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun write (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/JsonCanonicalLineWriterKt {
+	public static final fun canonicalLineJson (Ljava/util/Map;)Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/MdcCanonicalLineWriter : io/github/alexhumphreys/canonicallog/CanonicalLineWriter {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun write (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/MdcSeedingAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/util/Map;)V
+	public fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+}
+
+public abstract class io/github/alexhumphreys/canonicallog/Outcome {
+	public abstract fun getDurationMs ()J
+}
+
+public final class io/github/alexhumphreys/canonicallog/Outcome$Cancelled : io/github/alexhumphreys/canonicallog/Outcome {
+	public fun <init> (JLjava/util/concurrent/CancellationException;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/util/concurrent/CancellationException;
+	public final fun copy (JLjava/util/concurrent/CancellationException;)Lio/github/alexhumphreys/canonicallog/Outcome$Cancelled;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/Outcome$Cancelled;JLjava/util/concurrent/CancellationException;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/Outcome$Cancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/util/concurrent/CancellationException;
+	public fun getDurationMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/Outcome$Completed : io/github/alexhumphreys/canonicallog/Outcome {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lio/github/alexhumphreys/canonicallog/Outcome$Completed;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/Outcome$Completed;JILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/Outcome$Completed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getDurationMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/Outcome$Threw : io/github/alexhumphreys/canonicallog/Outcome {
+	public fun <init> (JLjava/lang/Throwable;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (JLjava/lang/Throwable;)Lio/github/alexhumphreys/canonicallog/Outcome$Threw;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/Outcome$Threw;JLjava/lang/Throwable;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/Outcome$Threw;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun getDurationMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/WithCanonicalLogKt {
+	public static final fun openCanonicalWorkUnit (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/CanonicalWorkUnitScope;
+	public static final fun withCanonicalCoroutineContext (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun withCanonicalLog (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun withCanonicalLogBlocking (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public final class io/github/alexhumphreys/canonicallog/WorkUnit {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/time/Instant;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public static synthetic fun copy$default (Lio/github/alexhumphreys/canonicallog/WorkUnit;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getStartedAt ()Ljava/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public abstract fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public abstract fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/WorkUnitAdapter$DefaultImpls {
+	public static fun seed (Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+}
+

@@ -1,0 +1,10 @@
+public class io/github/alexhumphreys/canonicallog/okhttp/spring/OkHttpCanonicalAutoConfiguration {
+	public fun <init> ()V
+	public fun canonicalOkHttpClientBuilderCustomizer (Lio/github/alexhumphreys/canonicallog/okhttp/OkHttpCanonicalInterceptor;)Lio/github/alexhumphreys/canonicallog/okhttp/spring/OkHttpClientBuilderCustomizer;
+	public fun okHttpCanonicalInterceptor ()Lio/github/alexhumphreys/canonicallog/okhttp/OkHttpCanonicalInterceptor;
+}
+
+public abstract interface class io/github/alexhumphreys/canonicallog/okhttp/spring/OkHttpClientBuilderCustomizer {
+	public abstract fun customize (Lokhttp3/OkHttpClient$Builder;)V
+}
+

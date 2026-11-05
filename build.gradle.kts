@@ -269,6 +269,20 @@ subprojects {
             }
         }
 
+        // Binary-compatibility gate: each module commits its public ABI as a dump under
+        // api/, and `check` fails when the compiled ABI drifts from it. A Maven Central release
+        // is permanent, and nothing else would notice an accidental removal or signature
+        // change before it ships. An intended change is
+        // `./gradlew updateKotlinAbi`, and the dump diff shows up in review.
+        @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+            // Calling the block is what enables it (2.4 removed the `enabled` property).
+            abiValidation {}
+        }
+        tasks.named("check") {
+            dependsOn("checkKotlinAbi")
+        }
+
         // Prove the 17-target jars actually load and run on a real 17 JVM: with
         // -Ptest.jdk=17, run the library test suites on a JDK 17 launcher (compilation
         // still uses the 25 toolchain). Scoped to library modules — samples target 21 and

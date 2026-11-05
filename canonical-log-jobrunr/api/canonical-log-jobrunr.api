@@ -1,0 +1,26 @@
+public final class io/github/alexhumphreys/canonicallog/jobrunr/CanonicalJobServerFilter : org/jobrunr/jobs/filters/JobServerFilter {
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;)V
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;)V
+	public fun <init> (Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Lio/github/alexhumphreys/canonicallog/CanonicalLogSampler;)V
+	public synthetic fun <init> (Lio/github/alexhumphreys/canonicallog/CanonicalLineWriter;Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Lio/github/alexhumphreys/canonicallog/CanonicalLogSampler;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun onProcessing (Lorg/jobrunr/jobs/Job;)V
+	public fun onProcessingFailed (Lorg/jobrunr/jobs/Job;Ljava/lang/Exception;)V
+	public fun onProcessingSucceeded (Lorg/jobrunr/jobs/Job;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/jobrunr/JobRunrWorkUnitAdapter : io/github/alexhumphreys/canonicallog/WorkUnitAdapter {
+	public static final field Companion Lio/github/alexhumphreys/canonicallog/jobrunr/JobRunrWorkUnitAdapter$Companion;
+	public static final field JOB_DURATION_MS Ljava/lang/String;
+	public static final field WORK_UNIT_KIND Ljava/lang/String;
+	public fun <init> ()V
+	public synthetic fun describe (Ljava/lang/Object;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public fun describe (Lorg/jobrunr/jobs/Job;)Lio/github/alexhumphreys/canonicallog/WorkUnit;
+	public synthetic fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public fun enrich (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/jobrunr/jobs/Job;Lio/github/alexhumphreys/canonicallog/Outcome;)V
+	public synthetic fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Ljava/lang/Object;)V
+	public fun seed (Lio/github/alexhumphreys/canonicallog/CanonicalLogContext;Lorg/jobrunr/jobs/Job;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/jobrunr/JobRunrWorkUnitAdapter$Companion {
+}
+

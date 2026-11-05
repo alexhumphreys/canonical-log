@@ -1,0 +1,25 @@
+public final class io/github/alexhumphreys/canonicallog/springretry/CanonicalMethodRetryListener : org/springframework/context/ApplicationListener {
+	public fun <init> ()V
+	public synthetic fun onApplicationEvent (Lorg/springframework/context/ApplicationEvent;)V
+	public fun onApplicationEvent (Lorg/springframework/resilience/retry/MethodRetryEvent;)V
+}
+
+public final class io/github/alexhumphreys/canonicallog/springretry/CanonicalSpringRetryListener : org/springframework/retry/RetryListener {
+	public fun <init> ()V
+	public fun close (Lorg/springframework/retry/RetryContext;Lorg/springframework/retry/RetryCallback;Ljava/lang/Throwable;)V
+}
+
+public class io/github/alexhumphreys/canonicallog/springretry/SpringRetryCanonicalAutoConfiguration {
+	public fun <init> ()V
+}
+
+public class io/github/alexhumphreys/canonicallog/springretry/SpringRetryCanonicalAutoConfiguration$BuiltInRetryConfiguration {
+	public fun <init> ()V
+	public fun canonicalMethodRetryListener ()Lio/github/alexhumphreys/canonicallog/springretry/CanonicalMethodRetryListener;
+}
+
+public class io/github/alexhumphreys/canonicallog/springretry/SpringRetryCanonicalAutoConfiguration$ClassicSpringRetryConfiguration {
+	public fun <init> ()V
+	public fun canonicalSpringRetryListener ()Lio/github/alexhumphreys/canonicallog/springretry/CanonicalSpringRetryListener;
+}
+

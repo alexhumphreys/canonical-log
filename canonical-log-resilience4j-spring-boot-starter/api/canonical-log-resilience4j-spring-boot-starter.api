@@ -1,0 +1,10 @@
+public final class io/github/alexhumphreys/canonicallog/resilience4j/spring/CanonicalResilience4jRegistrar : org/springframework/beans/factory/SmartInitializingSingleton {
+	public fun <init> (Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;)V
+	public fun afterSingletonsInstantiated ()V
+}
+
+public class io/github/alexhumphreys/canonicallog/resilience4j/spring/Resilience4jCanonicalAutoConfiguration {
+	public fun <init> ()V
+	public fun canonicalResilience4jRegistrar (Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;Lorg/springframework/beans/factory/ObjectProvider;)Lio/github/alexhumphreys/canonicallog/resilience4j/spring/CanonicalResilience4jRegistrar;
+}
+
