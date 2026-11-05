@@ -4,4 +4,5 @@ dependencies {
 
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.okhttp.tls)
+    testImplementation(project(":canonical-log-test"))
 }

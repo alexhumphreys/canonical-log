@@ -21,4 +21,5 @@ dependencies {
     testImplementation(libs.spring.retry)
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.aspectjweaver)
+    testImplementation(project(":canonical-log-test"))
 }
