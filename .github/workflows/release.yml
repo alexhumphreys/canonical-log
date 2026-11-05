@@ -1,26 +1,36 @@
 name: Release
 
 # Publishes a versioned release to Maven Central (Sonatype Central Portal) and, as a
-# secondary mirror, to GitHub Maven Packages, whenever a PR is merged into main. The version bump (major/minor/patch) is chosen from the merged PR's
-# conventional-commit title:
-#   - `feat!:` / `fix!:` / any `type!:` / `BREAKING CHANGE` -> major
-#   - `feat:`                                               -> minor
-#   - everything else (fix, perf, chore, docs, ...)         -> patch
+# secondary mirror, to GitHub Maven Packages. Run on demand from the Actions tab (or
+# `gh workflow run release.yml -f bump=minor`), choosing the version bump:
+#   - patch: fixes, dependency bumps, docs
+#   - minor: new features (any `feat:` since the last release)
+#   - major: breaking changes (any `!:` / BREAKING CHANGE since the last release)
+# Merging to main does not release, so one release can batch many PRs.
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
-  contents: write # axion pushes the new git tag
+  contents: write # axion pushes the new git tag; gh creates the GitHub release
   packages: write # publish artifacts to GitHub Packages
+
+# Two releases at once would race for the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     name: Tag & publish
-    if: github.event.pull_request.merged == true
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -36,23 +46,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Determine version bump from PR title
-        id: bump
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          title="$PR_TITLE"
-          echo "PR title: $title"
-          if printf '%s' "$title" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
-            || printf '%s' "$title" | grep -qiE 'BREAKING[ -]CHANGE'; then
-            incrementer=incrementMajor
-          elif printf '%s' "$title" | grep -qE '^feat(\([^)]*\))?:'; then
-            incrementer=incrementMinor
-          else
-            incrementer=incrementPatch
-          fi
-          echo "Selected incrementer: $incrementer"
-          echo "incrementer=$incrementer" >> "$GITHUB_OUTPUT"
+      # Main's CI already ran, but a Central release is irreversible: check the exact
+      # commit being tagged before tagging it.
+      - name: Build & test
+        run: ./gradlew build --stacktrace
 
       - name: Configure git identity
         run: |
@@ -60,11 +57,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create & push release tag
-        run: >-
-          ./gradlew release
-          -Prelease.versionIncrementer=${{ steps.bump.outputs.incrementer }}
-          -Prelease.disableChecks
-          --stacktrace
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          case "$BUMP" in
+            major) incrementer=incrementMajor ;;
+            minor) incrementer=incrementMinor ;;
+            *)     incrementer=incrementPatch ;;
+          esac
+          ./gradlew release \
+            -Prelease.versionIncrementer="$incrementer" \
+            -Prelease.disableChecks \
+            --stacktrace
 
       - name: Publish to GitHub Packages
         env:
@@ -72,11 +76,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew publishAllPublicationsToGitHubPackagesRepository --stacktrace
 
-      # Uploads a signed bundle to the Central Portal and leaves it in the PENDING state
-      # (automaticRelease = false in build.gradle.kts). Releasing it is a manual click at
-      # central.sonatype.com — deliberate, because a Central release is irreversible: the
-      # version can never be replaced or deleted. Flip to `publishAndReleaseToMavenCentral`
-      # once the pipeline has proven itself over a few releases.
+      # Uploads a signed bundle and releases it once Central's validation passes
+      # (automaticRelease = true in build.gradle.kts). Irreversible: the version can never
+      # be replaced or deleted, which is why this only runs when someone asks for a release.
       - name: Publish to Maven Central
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -84,3 +86,10 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: ./gradlew publishToMavenCentral --stacktrace
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(git describe --tags --abbrev=0)
+          gh release create "$tag" --title "$tag" --generate-notes --verify-tag
