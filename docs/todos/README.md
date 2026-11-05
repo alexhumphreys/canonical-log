@@ -14,10 +14,7 @@ the file says to update). If implementation diverges from the file's design, rec
 
 ## Priority: agreed next up
 
-048 (contributor contract harness), the last of the 044–049 batch from the design-explainer
-gap reviews; it can now build on 044's diagnostic hooks.
-
-041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are small and
+The 044–049 batch from the design-explainer gap reviews has fully landed. 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are small and
 slot anywhere. 015, 016 and 029 are demand-driven — leave them until an adopter asks
 (029 in particular waits for a gRPC adopter).
 
@@ -30,13 +27,11 @@ slot anywhere. 015, 016 and 029 are demand-driven — leave them until an adopte
 | [029](029-canonical-log-grpc.md) | `canonical-log-grpc` | Server interceptor entry point + client contributor (demand-driven) |
 | [041](041-kafka-adapter-hidden-record-docs.md) | Kafka hidden-record docs | Doc-only: KDoc + recipe pointer for frameworks that hide `ConsumerRecord` (the Kafka README already has it) |
 | [042](042-workunitadapter-of-factory.md) | `WorkUnitAdapter.of` | Lambda factory for one-off adapters (companion object + `of(describe, seed, enrich)`) |
-| [048](048-contributor-contract-harness.md) | Contributor contract harness | Reusable no-throw/no-leak/type-convention contract every contributor runs (promotes the deferred `ContributorContractTest` + negative-assertion helpers) |
 
 Dependencies: 016's shared-writer dependency (020) has landed; 029 builds on the graduated
 open/close primitive (024, landed). 041 and 042 are independent; 042's recipe update reads
 best after 041's rewording (either order works, the second one rebases the recipe wording).
-048 can reuse the strict-mode hooks from 044 but doesn't depend on them; keep
-`docs/design-explainer.md` in sync if it changes something that document describes.
+Keep `docs/design-explainer.md` in sync if an item changes something that document describes.
 
 **Each file carries a `**Model:**` line** with a recommended model and the reason. The split is
 by *kind* of work, not difficulty: Sonnet for the mechanically-specified ones, where the file
@@ -52,8 +47,8 @@ finds the commit, and `docs/CLAUDE.md` records the resulting decisions. Most rec
 (`WorkUnitAdapter.seed`), 026 (`canonical-log-kafka`), 027 (trace correlation), 028
 (`JsonCanonicalLineWriter`), 030 (`canonical-log-sqs`), 031 (`canonical-log-jobrunr`), 043
 (Resilience4j + Spring retry), 018 (field guardrails), 046/047 (`CanonicalLogContext.get`/`contains`,
-`CanonicalFields.MESSAGE`), and 044/045/049 (contribution diagnostics + scope idempotence
-guards).
+`CanonicalFields.MESSAGE`), 044/045/049 (contribution diagnostics + scope idempotence
+guards), and 048 (contributor/adapter contract harness + negative assertions).
 
 `docs/CLAUDE.md` and the `benchmarks` module call the allocation-budget/JMH work "todo 044";
 that is a different item from the strict-mode 044 — the number was reused.
