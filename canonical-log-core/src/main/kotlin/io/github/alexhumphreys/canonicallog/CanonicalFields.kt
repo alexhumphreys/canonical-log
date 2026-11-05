@@ -183,6 +183,25 @@ public object CanonicalFields {
      */
     public const val LATE_WRITE_COUNT: String = "canonical_log_late_write_count"
 
+    /**
+     * `Long` — writes dropped because they would have added a new key past
+     * [CanonicalLogLimits.maxFields]. Usually a `put` inside a per-item loop minting one key per
+     * item; [DROPPED_FIELD_KEY] names the first one.
+     */
+    public const val DROPPED_FIELD_COUNT: String = "canonical_log_dropped_field_count"
+
+    /** `String` — the first key dropped by the field cap (see [DROPPED_FIELD_COUNT]). First wins. */
+    public const val DROPPED_FIELD_KEY: String = "canonical_log_dropped_field_key"
+
+    /**
+     * `Long` — `CharSequence` values cut to [CanonicalLogLimits.maxValueLength] characters. The
+     * stored value is the prefix; [TRUNCATED_FIELD_KEY] names the first truncated key.
+     */
+    public const val TRUNCATED_FIELD_COUNT: String = "canonical_log_truncated_field_count"
+
+    /** `String` — the first key whose value was truncated (see [TRUNCATED_FIELD_COUNT]). First wins. */
+    public const val TRUNCATED_FIELD_KEY: String = "canonical_log_truncated_field_key"
+
     // --- Trace correlation (written by seeding adapters, not by core itself) ---
 
     /**

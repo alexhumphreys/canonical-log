@@ -35,6 +35,11 @@ class CanonicalFieldsTest : DescribeSpec({
             CanonicalFields.TYPE_CONFLICT shouldBe "canonical_log_type_conflict"
             CanonicalFields.TYPE_CONFLICT_KEY shouldBe "canonical_log_type_conflict_key"
             CanonicalFields.TYPE_CONFLICT_TYPE shouldBe "canonical_log_type_conflict_type"
+            CanonicalFields.LATE_WRITE_COUNT shouldBe "canonical_log_late_write_count"
+            CanonicalFields.DROPPED_FIELD_COUNT shouldBe "canonical_log_dropped_field_count"
+            CanonicalFields.DROPPED_FIELD_KEY shouldBe "canonical_log_dropped_field_key"
+            CanonicalFields.TRUNCATED_FIELD_COUNT shouldBe "canonical_log_truncated_field_count"
+            CanonicalFields.TRUNCATED_FIELD_KEY shouldBe "canonical_log_truncated_field_key"
             CanonicalFields.ENRICH_ERROR shouldBe "canonical_log_enrich_error"
             CanonicalFields.ENRICH_ERROR_CLASS shouldBe "canonical_log_enrich_error_class"
             CanonicalFields.SEED_ERROR shouldBe "canonical_log_seed_error"
@@ -125,6 +130,11 @@ private fun allPublishedValues(): List<String> = listOf(
     CanonicalFields.TYPE_CONFLICT,
     CanonicalFields.TYPE_CONFLICT_KEY,
     CanonicalFields.TYPE_CONFLICT_TYPE,
+    CanonicalFields.LATE_WRITE_COUNT,
+    CanonicalFields.DROPPED_FIELD_COUNT,
+    CanonicalFields.DROPPED_FIELD_KEY,
+    CanonicalFields.TRUNCATED_FIELD_COUNT,
+    CanonicalFields.TRUNCATED_FIELD_KEY,
     CanonicalFields.ENRICH_ERROR,
     CanonicalFields.ENRICH_ERROR_CLASS,
     CanonicalFields.SEED_ERROR,

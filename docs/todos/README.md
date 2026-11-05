@@ -18,7 +18,7 @@ the file says to update). If implementation diverges from the file's design, rec
 gap reviews; it can now build on 044's diagnostic hooks.
 
 041 and 042 (from the 2026-07-11 Dropwizard-integration dogfooding feedback) are small and
-slot anywhere. 015, 016, 018 and 029 are demand-driven — leave them until an adopter asks
+slot anywhere. 015, 016 and 029 are demand-driven — leave them until an adopter asks
 (029 in particular waits for a gRPC adopter).
 
 ## Backlog
@@ -27,7 +27,6 @@ slot anywhere. 015, 016, 018 and 029 are demand-driven — leave them until an a
 |---|------|-----------|
 | [015](015-time-section-helper.md) | `CanonicalLog.time { }` | Section timing helper (`_ms_total` + `_count`) |
 | [016](016-webflux-support.md) | WebFlux support | Reactive `WebFilter`; core bridge already coroutine-ready |
-| [018](018-field-guardrails.md) | Field guardrails | Cap field count / value size with truncation markers |
 | [029](029-canonical-log-grpc.md) | `canonical-log-grpc` | Server interceptor entry point + client contributor (demand-driven) |
 | [041](041-kafka-adapter-hidden-record-docs.md) | Kafka hidden-record docs | Doc-only: KDoc + recipe pointer for frameworks that hide `ConsumerRecord` (the Kafka README already has it) |
 | [042](042-workunitadapter-of-factory.md) | `WorkUnitAdapter.of` | Lambda factory for one-off adapters (companion object + `of(describe, seed, enrich)`) |
@@ -52,7 +51,7 @@ finds the commit, and `docs/CLAUDE.md` records the resulting decisions. Most rec
 (X-Request-Id hardening, in `canonical-log-servlet`), 022 (`canonical-log-dropwizard`), 023
 (`WorkUnitAdapter.seed`), 026 (`canonical-log-kafka`), 027 (trace correlation), 028
 (`JsonCanonicalLineWriter`), 030 (`canonical-log-sqs`), 031 (`canonical-log-jobrunr`), 043
-(Resilience4j + Spring retry), 046/047 (`CanonicalLogContext.get`/`contains`,
+(Resilience4j + Spring retry), 018 (field guardrails), 046/047 (`CanonicalLogContext.get`/`contains`,
 `CanonicalFields.MESSAGE`), and 044/045/049 (contribution diagnostics + scope idempotence
 guards).
 
