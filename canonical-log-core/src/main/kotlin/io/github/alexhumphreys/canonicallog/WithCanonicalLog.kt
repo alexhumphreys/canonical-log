@@ -479,6 +479,8 @@ private fun <T> runEnrich(
     input: T,
     outcome: Outcome,
 ) {
+    // Exempts enrich's new keys from the field cap (see CanonicalLogContext.enriching).
+    ctx.enriching = true
     try {
         adapter.enrich(ctx, input, outcome)
     } catch (enrichEx: Exception) {
@@ -489,6 +491,8 @@ private fun <T> runEnrich(
             ctx.workUnit.id,
             enrichEx,
         )
+    } finally {
+        ctx.enriching = false
     }
 }
 

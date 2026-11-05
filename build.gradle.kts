@@ -22,8 +22,8 @@ plugins {
 
 // Version is derived from git tags by axion-release. On a tagged commit this is a
 // clean release version (e.g. 1.2.0); otherwise the next version with a -SNAPSHOT
-// suffix. The release job bumps the tag; the bump size (major/minor/patch) is chosen
-// from the merged PR's conventional-commit title via -Prelease.versionIncrementer.
+// suffix. The release workflow (run on demand) bumps the tag; the bump size
+// (major/minor/patch) is its input, passed as -Prelease.versionIncrementer.
 scmVersion {
     tag {
         prefix.set("v")
@@ -71,7 +71,9 @@ fun Project.configureCentralPublishing(platform: Platform, pomDescription: Strin
     extensions.configure<MavenPublishBaseExtension> {
         configure(platform)
 
-        publishToMavenCentral(automaticRelease = false)
+        // Releases as soon as Central validates the bundle. Safe because the release
+        // workflow only runs when someone triggers it, not on every merge.
+        publishToMavenCentral(automaticRelease = true)
 
         // Reads ORG_GRADLE_PROJECT_signingInMemoryKey / ...KeyId / ...Password from the
         // environment; a no-op locally where those are unset, so `./gradlew build` and the

@@ -3,10 +3,23 @@ package io.github.alexhumphreys.canonicallog
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
+public class CanonicalLogContext @JvmOverloads @DelicateCanonicalLogApi public constructor(
     public val workUnit: WorkUnit,
+    limits: CanonicalLogLimits = CanonicalLog.limits,
 ) {
     internal val fields: ConcurrentHashMap<String, Any> = ConcurrentHashMap()
+
+    // Copied out of [limits] so the hot path reads two final ints, not a volatile and a field.
+    private val maxFields = limits.maxFields
+    private val maxValueLength = limits.maxValueLength
+
+    /**
+     * True while the adapter's `enrich` runs (set by `runEnrich`). New keys written then are
+     * exempt from the field cap: enrich writes the line's authoritative fields (status, outcome,
+     * error defaults) once per unit, and a runaway loop in the handler must not cost us those.
+     */
+    @Volatile
+    internal var enriching: Boolean = false
 
     /**
      * Set once the line has been published (by `safeEmit`, after the writer took its snapshot).
@@ -20,10 +33,42 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     /** One WARN per context, however many late writes arrive. */
     private val lateWriteWarned = AtomicBoolean(false)
 
+    /**
+     * Set [key] to [value]; a `null` value is dropped. Subject to [CanonicalLogLimits]: a new key
+     * past the field cap is dropped, and a `CharSequence` longer than the value limit is stored
+     * truncated. Both are counted on the line (`canonical_log_dropped_field_*` /
+     * `canonical_log_truncated_field_*`), never thrown.
+     */
     public fun put(key: String, value: Any?) {
         if (value == null) return
         if (finalized) recordLateWrite(key)
-        fields[key] = value
+        // size() reads ConcurrentHashMap's counter without allocating; the slower admission
+        // checks only run once the map is already full.
+        if (fields.size >= maxFields && !admitsNewKey(key)) return
+        fields[key] = if (value is CharSequence && value.length > maxValueLength) truncate(key, value) else value
+    }
+
+    /**
+     * Over the field cap: may [key] still be written? Yes if it's an overwrite, if the adapter's
+     * enrich is running, or if it's a field the library itself defines. Otherwise the write is
+     * dropped and counted.
+     */
+    private fun admitsNewKey(key: String): Boolean {
+        if (fields.containsKey(key) || enriching || key in libraryFieldNames) return true
+        // Raw writes, not put()/increment(): the markers report on the cap and must not be
+        // subject to it (or counted as late writes).
+        fields.merge(CanonicalFields.DROPPED_FIELD_COUNT, 1L, SumLongs)
+        fields.putIfAbsent(CanonicalFields.DROPPED_FIELD_KEY, key)
+        return false
+    }
+
+    private fun truncate(key: String, value: CharSequence): String {
+        var end = maxValueLength
+        // Don't leave half a surrogate pair at the end of the prefix.
+        if (Character.isHighSurrogate(value[end - 1])) end -= 1
+        fields.merge(CanonicalFields.TRUNCATED_FIELD_COUNT, 1L, SumLongs)
+        fields.putIfAbsent(CanonicalFields.TRUNCATED_FIELD_KEY, key)
+        return value.subSequence(0, end).toString()
     }
 
     /**
@@ -80,6 +125,9 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     @JvmOverloads
     public fun increment(key: String, by: Long = 1L) {
         if (finalized) recordLateWrite(key)
+        // A Long can't breach the value-length limit, but creating a new counter key is
+        // subject to the field cap like any put.
+        if (fields.size >= maxFields && !admitsNewKey(key)) return
         // The remapping function is the stateless singleton [SumLongs] rather than a lambda,
         // and the conflict is read off merge's *return* value rather than out of a captured
         // local. A lambda that captured a `var` would allocate two objects on every increment
@@ -196,6 +244,18 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
         return copy
     }
 }
+
+/**
+ * Every field name the library defines — the `String` constants on [CanonicalFields]. Keys in
+ * this set bypass the field cap (see [CanonicalLogLimits]): the set is fixed and small, so the
+ * exemption keeps the map bounded. Read reflectively once, so a new constant is covered
+ * without anyone remembering to list it here.
+ */
+private val libraryFieldNames: Set<String> =
+    CanonicalFields::class.java.declaredFields
+        .filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && it.type == String::class.java }
+        .map { it.get(null) as String }
+        .toHashSet()
 
 /**
  * `ConcurrentHashMap.merge` remapping function for [CanonicalLogContext.increment]: sums two
