@@ -7,6 +7,7 @@ import io.github.alexhumphreys.canonicallog.WorkUnitAdapter
 import software.amazon.awssdk.services.sqs.model.Message
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName
 import java.time.Instant
+import java.util.UUID
 
 /**
  * [WorkUnitAdapter] for AWS SQS message consumers, capturing the mechanically-uniform messaging
@@ -39,8 +40,11 @@ public class SqsMessageWorkUnitAdapter(
     private val queueName: String = queueName.substringAfterLast('/')
 
     override fun describe(input: Message): WorkUnit =
-        // SQS always assigns a messageId, so identity needs no fallback lambda.
-        WorkUnit(id = input.messageId(), kind = "sqs_message", startedAt = Instant.now())
+        // SQS assigns every received message an id, but the SDK model types it as optional, and a
+        // hand-built or re-materialized Message can lack one. describe is not guarded by core, so
+        // passing the null through would fail the handler; fall back to a random id instead (the
+        // Kafka adapter's rule) and leave messaging_message_id absent.
+        WorkUnit(id = input.messageId() ?: UUID.randomUUID().toString(), kind = "sqs_message", startedAt = Instant.now())
 
     override fun enrich(ctx: CanonicalLogContext, input: Message, outcome: Outcome) {
         ctx.put("messaging_system", "aws_sqs")
