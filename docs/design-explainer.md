@@ -597,33 +597,60 @@ Second, MDC values are **strings**. You'd lose typed counters — `increment` be
 get-parse-add-put, non-atomic under the concurrent contributors of section 3.5 — and
 typed JSON output, so every number and duration arrives at your query engine quoted.
 
-Third, MDC does not spare you the propagation work. Section 2.5 is the evidence: MDC is
-*itself* a second thread-local, so the coroutine element and the executor wrappers built
-in section 2 have to carry it too, save-and-restore, at every seam. Choosing MDC alone
-doesn't remove that machinery — it just means you write it for a map whose copy-on-hop
-semantics belong to the logging framework rather than to you.
+Third, MDC propagates by **copy**, and an accumulator needs a **shared reference**. The
+off-the-shelf ways to move MDC across a hop — `kotlinx-coroutines-slf4j`'s `MDCContext`,
+or a `TaskDecorator` built on `MDC.getCopyOfContextMap()` — snapshot the map on one side
+and install the copy on the other. That's right for correlation ids, which only flow
+outward, and wrong for an accumulator, whose contributions have to flow *back*: a child's
+`db_query_count` belongs on the parent's line. `MDCContext`'s own KDoc spells out the
+consequence — an `MDC.put` inside the coroutine "is going to be lost on the next
+suspension" — and a write on an executor thread lands in that thread's copy, never the
+request's. So every hop has to carry a reference to one mutable map, which is exactly the
+binding section 2 builds. Pinned by `BridgeContractTest`'s two "Sharing" contracts (a
+child `launch`'s and a child `async`'s writes are in the parent's snapshot) and, for
+executor hops, by
+[`ContextPropagationTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/ContextPropagationTest.kt)
+asserting a pool thread's `put` lands on the submitting unit's line.
 
 So the library *uses* MDC for exactly what it's good at: mirroring one correlation key
 onto ordinary log lines, so the narrative logs join to the wide event.
 
 ### 4.2 vs OpenTelemetry spans
 
-The overlapping machinery is real: OTel context propagation also solves section 2, and
-span attributes also collect key-values. The differences are philosophical and
-operational. A canonical line is **one row per request in your log pipeline** — queryable
-with LogQL/SQL alongside your other logs, no trace backend, no sampling decision
-(traces at production volume are nearly always sampled; canonical lines are cheap enough
-to keep at 100%, which matters precisely for the rare weird request you need to debug).
-Spans are many rows per request in a trace backend, better for *where did time go across
-services*, worse for *give me every field about this request in one place*. The design
-treats them as complementary: `canonical-log-tracing-otel` seeds `trace_id`/`span_id`
-onto the line so each system can join to the other, and core takes no OTel dependency.
+Start with what's shared, because it's more than it looks. OTel's Kotlin extension
+propagates context with a `ThreadContextElement` too: `updateThreadContext` makes the OTel
+context current, `restoreThreadContext` closes the scope that returned — the same
+per-dispatch save-and-restore as `CanonicalLogElement` (section 2.3). Section 2's
+machinery is not what separates the two.
 
-You could build canonical lines *on* OTel (a span processor that flattens the local root
-span at end). You'd inherit OTel's heavyweight context machinery and its attribute-type
-restrictions, and your "one line" would be coupled to trace sampling and SDK
-configuration. Defensible — but a much bigger dependency for a pattern that needs a map
-and a try/finally.
+The output is. A canonical line is **one row per unit of work in your log pipeline** —
+queryable with LogQL/SQL alongside your other logs, and kept for every request. Traces at
+production volume are nearly always sampled, and the request you need to debug is
+precisely the rare one sampling discards. Spans are many rows per request in a trace
+backend: better for *where did time go across services*, worse for *give me every field
+about this request in one place*. The design treats them as complementary:
+`canonical-log-tracing-otel` seeds `trace_id`/`span_id` onto the line so each system can
+join to the other, and core takes no OTel dependency.
+
+You could build canonical lines *on* OTel — a span processor that flattens the local root
+span when it ends. Sampling isn't a hard blocker there: a sampler returning `RECORD_ONLY`
+lets a processor see every span without exporting it. But your "one line" would then
+depend on sampler and SDK configuration owned by whoever configures tracing, and two
+properties of the span model work against an accumulator (both checked against the 1.67
+API and SDK):
+
+- **No atomic increment.** The `Span` API can set an attribute but not read one, so a
+  counter fed by concurrent contributors (section 2.7's three parallel OkHttp calls) needs
+  a read-modify-write outside the API. `CanonicalLogContext.increment` is a
+  `ConcurrentHashMap.merge`, model-checked by `CanonicalLogContextLincheckTest`
+  (section 3.5).
+- **An attribute count limit.** The SDK's default `SpanLimits` cap a span at 128
+  attributes and drop the rest. Fine for a span; a ceiling for a wide event, whose whole
+  point is a column per thing worth knowing. Configurable — but one more setting the line
+  silently depends on.
+
+Defensible — but a bigger dependency, coupled to someone else's configuration, for a data
+model that doesn't fit counters.
 
 ### 4.3 vs an immutable accumulator
 
@@ -640,8 +667,11 @@ join points; arbitrary executor hops don't have them.)
 
 Handing snapshots to a dedicated writer thread would take serialization off the request
 path. The costs: a queue to bound (drop lines or apply backpressure when full — both
-worse than the ~microseconds serialization costs), ordering loss against the process's
-other log output, and lines lost on crash — precisely when you want them most. And it's
+worse than the microseconds serialization costs), ordering loss against the process's
+other log output, and lines lost on crash — precisely when you want them most. Those
+microseconds are measured, not guessed:
+[`CanonicalLineJsonBenchmark`](../benchmarks/src/main/java/io/github/alexhumphreys/canonicallog/benchmarks/CanonicalLineJsonBenchmark.java)
+puts `canonicalLineJson` at ~340 ns for 10 fields and ~2.5 µs for 40. And it's
 unnecessary: Logback's async appender already exists at the right layer if transport
 latency ever matters. Emit-inline is the simpler, more honest default.
 
@@ -682,15 +712,18 @@ not?
 3. **Plain executor hops** (`propagatingCanonicalContext()`) also don't map: ScopedValue
    deliberately does not propagate through arbitrary `ExecutorService.submit`, only
    through `StructuredTaskScope` forks. Spring `@Async` and friends aren't structured.
-4. **Java 17 floor.** ScopedValue is final only in 25.
+
+Separately from those, there's a project constraint rather than a technical one: library
+modules target Java 17 bytecode (pinned by `BytecodeTargetTest`), and ScopedValue is final
+only in 25. On its own that would only *defer* adoption; points 2 and 3 are what make
+ScopedValue a second mechanism instead of a replacement.
 
 The honest summary: ScopedValue is the right tool for a *virtual-threads-plus-structured-
 concurrency-only* world, and if this library were Loom-only it should use it. In a world
 where Kotlin coroutines are a first-class consumer, ThreadLocal + `ThreadContextElement`
 is not legacy — it's the only mechanism that spans both. The repo's stated plan (prototype
 a ScopedValue bridge and diff it against `VirtualThreadTortureTest` before v0.2) is the
-right experiment; expect it to conclude "additive option for Loom shops, not a
-replacement."
+right experiment, and its result isn't in yet.
 
 **Structured concurrency (JEP 505, still preview).** `StructuredTaskScope` gives Java the
 guarantee Kotlin's `coroutineScope` gives this library already (section 2.3's "children
@@ -709,10 +742,16 @@ virtual threads spread, not weaker.
 
 - **Hand-rolled JSON writer**
   ([`JsonCanonicalLineWriter`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/JsonCanonicalLineWriter.kt)):
-  no Jackson/kotlinx-serialization dependency for a flat map of primitives. Kept safe by
-  the accumulator's type discipline; full RFC 8259 escaping; never throws (a throwing
-  `toString()` renders as a `<serialization_failed: …>` string). The tradeoff is
-  maintaining ~90 lines of escaping code — tested directly, including concurrently.
+  the typed sink for stacks that don't run `logstash-logback-encoder`. Route the
+  `canonical` logger to a plain `%msg%n` appender and the message *is* the typed JSON
+  object; the alternatives were the Logstash writer (typed, but needs that encoder) or the
+  MDC writer (any layout, but every number arrives quoted). Hand-rolling it keeps core's
+  dependencies at slf4j-api and coroutines, so the one module every adopter takes never
+  puts a Jackson version into their graph — the Logstash path, and therefore the Spring
+  starter's default, still brings Jackson, by choice. Kept safe by the accumulator's type
+  discipline; full RFC 8259 escaping; never throws (a throwing `toString()` renders as a
+  `<serialization_failed: …>` string). The tradeoff is owning the escaping code — tested
+  directly (`JsonCanonicalLineWriterTest`, `JsonCanonicalLineWriterConcurrentTest`).
 - **String keys, constants file, no schema**
   ([`CanonicalFields`](../canonical-log-core/src/main/kotlin/io/github/alexhumphreys/canonicallog/CanonicalFields.kt)):
   a registry/validation DSL is an explicit anti-goal; the constants make renames a
@@ -732,6 +771,92 @@ virtual threads spread, not weaker.
   only at emit time. The handler-ownable `message` key is a constant too
   (`CanonicalFields.MESSAGE`): `JsonCanonicalLineWriter` folds the human summary in under
   it unless the snapshot already carries one.
+
+### 4.7 vs Micrometer Observation
+
+The closest alternative in shape, and the one Spring adopters already have running. An
+`Observation` has the lifecycle section 4.1 says MDC lacks — start, scopes, error, stop —
+with handlers called at each point and a `Context` that carries key-values. Spring Boot
+already opens one per HTTP request, and Spring Framework 7 bridges it into coroutines with
+`PropagationContextElement` — once more, a `ThreadContextElement`. So the case against it
+can't be lifecycle or propagation. It's the four points below (the Micrometer behaviour is
+as checked against `micrometer-observation` 1.17.1):
+
+- **Work-unit ownership.** One request produces many Observations: the server
+  observation, one per client call, one per `@Observed` method. A canonical-line handler
+  would have to pick a root and flatten the rest into it — the same tree-flattening an
+  OTel span processor needs (section 4.2). Here the unit is one bracket that one entry
+  point owns, so there's nothing to adjudicate.
+- **Concurrency contract.** `Observation.Context`'s internal maps were made safe for
+  concurrent use after the fact: micrometer#3874 (`ConcurrentModificationException` in
+  `computeIfAbsent`, fixed in 1.10.12) and #5739 (concurrent key-value reads and writes,
+  fixed in 1.14.2). `CanonicalLogContext`'s guarantees are specified and model-checked
+  (section 3.5).
+- **Telemetry can fail the request.** Nothing in `SimpleObservation` or the composite
+  handlers catches a handler's exception, so a handler that throws in `onStop` throws into
+  the instrumented code. `stop()` has no already-stopped guard either: a second call
+  re-runs the filters and handlers (the validator that flags it ships in the test module).
+  Section 3.6's swallow-and-record and section 3.4's exactly-once emit would be the
+  handler's to rebuild.
+- **The value model is aimed at metrics.** Key-values are strings, split into low and
+  high cardinality to keep high-cardinality data out of metric tags — the opposite
+  pressure from a wide event. There *is* an untyped `Object` map with `computeIfAbsent`,
+  so typed counters could live there, but it can't be enumerated (no `keySet`,
+  `entrySet` or `forEach`): a handler can only read keys it already knows about. In
+  practice you'd store one `CanonicalLogContext` under one key and use Observation purely
+  as a carrier — and the library already has one.
+
+One operational property besides: an `ObservationPredicate` can switch an observation off,
+and a line built on it would vanish with no diagnostic.
+
+None of this rules out a narrow bridge later — a handler that opens units only for
+whitelisted server or consumer contexts. Its main gain would be entry points the library
+has no provider for yet (JMS, RabbitMQ), but those are bracketable and can be written as
+ordinary providers when someone needs them, without a second lifecycle path to maintain.
+
+### 4.8 Where the pattern strains
+
+Every comparison above leans on one assumption: there is a **bracketable unit of work** —
+a moment it starts, a moment it ends, and code in between whose effects belong to it.
+Where that holds, the design holds. Three places it gets harder:
+
+- **Reactive pipelines.** A WebFlux request is still bracketable — a `WebFilter` can open
+  the unit and emit on the terminal signal — but Reactor operators hop threads without a
+  coroutine dispatch, so `CanonicalLogElement` never runs and contributors find an empty
+  ThreadLocal. R2DBC is the same problem from the contributor side: its queries belong to
+  a unit, they just can't find it. Bridging Reactor's `Context` to the ThreadLocal is
+  planned, not shipped ([todo 016](todos/016-webflux-support.md)); today the Spring
+  starter is servlet-only.
+- **Streaming responses.** A long-lived SSE or streaming response is one unit by bracket
+  but many events by meaning, and a line at the end may arrive too late to help. The
+  library's answer for long work is to decompose it into several units; multi-line emit
+  is a deliberate non-goal.
+- **Hops the library can't see.** Section 2.4 covers the two seams the library can help
+  with. APIs that choose their own thread — `CompletableFuture.*Async` without an executor
+  argument, library-owned callback threads like OkHttp's `enqueue()` dispatcher or the
+  Kafka producer's ack thread — need a wrapper applied in the right place or a
+  module-specific capture (section 5, item 2). Anything else starts cold.
+
+### 4.9 So what does the library actually add?
+
+These sections concede a lot. Section 2's propagation mechanism isn't unique: OTel's
+Kotlin extension and Spring's `PropagationContextElement` arrived at the same
+`ThreadContextElement` save-and-restore. The case for the library rests elsewhere:
+
+- **One unsampled row per bracketable unit**, from a lifecycle one entry point owns: one
+  open, one line, an outcome classified from how the block actually ended (sections
+  3.3–3.4).
+- **A specified concurrent accumulator**: atomic typed counters, per-field
+  linearizability model-checked by Lincheck, and its weak spots documented rather than
+  hidden (section 3.5).
+- **A documented emit and outcome contract**: telemetry never fails the operation
+  (section 3.6), cancellation isn't an error, and intent fields survive the adapter
+  (section 1's precedence rules).
+- **No framework dependency**: core is slf4j-api plus kotlinx-coroutines; Spring, OTel
+  and Micrometer stay optional, at the edges.
+
+Section 2 is still worth reading in full — not because the mechanism is novel, but because
+you can't debug a missing field without knowing how it was supposed to arrive.
 
 ---
 
@@ -826,5 +951,4 @@ stack; kotlinx.coroutines has no way to re-establish such a binding on each disp
 would break its safety model). A ScopedValue core would still need the entire
 ThreadLocal + element bridge for suspend paths, plus it can't cross plain executor hops
 and isn't in the Java 17 floor. It becomes attractive only for a Loom-only,
-coroutine-free deployment — as an *additional* binding mode, which is the repo's stated
-v0.2 experiment.
+coroutine-free deployment — which is what the repo's v0.2 prototype is meant to test.
