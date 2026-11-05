@@ -1,5 +1,7 @@
 package io.github.alexhumphreys.canonicallog.okhttp
 
+import io.github.alexhumphreys.canonicallog.CanonicalFields
+import io.github.alexhumphreys.canonicallog.CanonicalLog
 import io.github.alexhumphreys.canonicallog.CanonicalLogContext
 import io.github.alexhumphreys.canonicallog.Outcome
 import io.github.alexhumphreys.canonicallog.WorkUnit
@@ -261,6 +263,61 @@ class OkHttpCanonicalInterceptorTest : DescribeSpec({
 
             snap["http_client_request_count"] shouldBe 1L
             (snap["http_client_request_duration_ms_total"] as Long).shouldBeGreaterThanOrEqual(0L)
+        }
+
+        it("a call that finishes after the unit ended hits the late-write diagnostic instead of vanishing") {
+            // The tag deliberately outlives the work unit, so a slow enqueue()'s contribution
+            // lands on a context whose line has already been emitted. The write succeeds and is
+            // still lost — todo 049's signal is what distinguishes that from a field nobody wrote.
+            // The gate interceptor sits *inside* the canonical one's chain.proceed(), so the
+            // contribution provably happens after emit rather than racing it.
+            server.enqueue(MockResponse(code = 200, body = "ok"))
+            val gate = CountDownLatch(1)
+            val c = OkHttpClient.Builder()
+                .addInterceptor(OkHttpCanonicalInterceptor())
+                .addInterceptor { chain ->
+                    gate.await(10, TimeUnit.SECONDS)
+                    chain.proceed(chain.request())
+                }
+                .build()
+
+            var snap: Map<String, Any> = emptyMap()
+            var ctx: CanonicalLogContext? = null
+            val done = CountDownLatch(1)
+            val late = mutableListOf<String>()
+            CanonicalLog.onLateWrite = { _, key -> synchronized(late) { late += key } }
+
+            try {
+                withCanonicalLogBlocking(nullAdapter, "wu", { snap = it.snapshot() }) { c0 ->
+                    ctx = c0
+                    val request = Request.Builder()
+                        .url(server.url("/").toString())
+                        .withCanonicalContext()
+                        .build()
+                    c.newCall(request).enqueue(object : Callback {
+                        override fun onFailure(call: Call, e: IOException) = done.countDown()
+                        override fun onResponse(call: Call, response: Response) {
+                            response.close()
+                            done.countDown()
+                        }
+                    })
+                    // Return without awaiting the call: the unit ends (and emits) first.
+                }
+                // The line is out; only now let the outbound call proceed and contribute.
+                snap.containsKey("http_client_request_count") shouldBe false
+                gate.countDown()
+                done.await(10, TimeUnit.SECONDS) shouldBe true
+
+                val context = checkNotNull(ctx)
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                while (context.get(CanonicalFields.LATE_WRITE_COUNT) == null && System.nanoTime() < deadline) {
+                    Thread.sleep(10)
+                }
+                (context.get(CanonicalFields.LATE_WRITE_COUNT) as Long) shouldBeGreaterThanOrEqual 1L
+                synchronized(late) { late.contains("http_client_request_count") } shouldBe true
+            } finally {
+                CanonicalLog.onLateWrite = null
+            }
         }
 
         it("is a no-op for an untagged enqueue() — the tag is opt-in") {

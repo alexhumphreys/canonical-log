@@ -455,6 +455,23 @@ are cut off at the snapshot — documented, deliberate, and pinned as the "must 
 contain" class in `HostilePlanPropertyTest`. The alternative (emit waits for arbitrary
 detached work) would let a leaked task delay a request's log line forever.
 
+The cutoff is deliberate; being *unable to notice it* was not. Both halves of the loss
+are now detectable, opt-in and off by default:
+
+- a contribution that finds **no bound unit** (the hop that skipped
+  `propagatingCanonicalContext()`) calls `CanonicalLog.onUnboundContribution(key)`;
+- a contribution that arrives through a **captured context reference** after the line was
+  emitted — the write succeeds against a live map and is lost anyway — bumps
+  `canonical_log_late_write_count` on the context, WARNs once per unit, and calls
+  `CanonicalLog.onLateWrite(workUnitId, key)`.
+
+Neither changes what production does (the hook is read only on the branch that was
+already going nowhere). `canonical-log-test` wraps them as `failOnUnboundContributions
+{ }` / `failOnLateWrites { }` / `failOnLostContributions { }`, which turn exactly these
+mistakes into a test failure naming the key; `recordLostContributions { }` collects them
+instead of throwing. See
+[`ContributionDiagnosticsTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/ContributionDiagnosticsTest.kt).
+
 ### 3.3 The line lies about the outcome
 
 *The failure:* the handler threw but the line says `Completed`; or a child coroutine
@@ -499,12 +516,23 @@ async mode), emit-exactly-once is **the caller's job**, guarded with an
 the worked example, because servlet async callbacks (`onComplete`/`onTimeout`/`onError`)
 genuinely can race and repeat.
 
+The scope carries its own `compareAndSet` backstop underneath that contract: a second
+`emit` is dropped with one WARN rather than publishing a duplicate line, a second
+`unbind` refuses to restore again (putting a stale `previousContext` back over whatever
+is bound by then is precisely the corruption worth preventing), and an `enrich` after
+`emit` still runs but WARNs that its fields missed the line. This is defence in depth,
+not a replacement for the caller's guard — that one also gates the listener-side work
+around the finalize step, and only the caller can decide which of two racing callbacks
+should win.
+
 *The evidence:*
 [`LifecycleReentrancyTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/LifecycleReentrancyTest.kt)
 pins the emit-with-nothing-bound contract (writes inside emit no-op; a unit opened inside
 emit nests under the *enclosing* unit, never the finalized one);
 [`CanonicalLogAsyncEmitListenerTest`](../canonical-log-servlet/src/test/kotlin/io/github/alexhumphreys/canonicallog/servlet/CanonicalLogAsyncEmitListenerTest.kt)
-hammers the racing-callbacks case.
+hammers the racing-callbacks case; the scope's own guards (double emit, double unbind
+leaving no phantom nesting, an eight-thread emit race) are pinned in
+[`CanonicalWorkUnitScopeTest`](../canonical-log-core/src/test/kotlin/io/github/alexhumphreys/canonicallog/CanonicalWorkUnitScopeTest.kt).
 
 ### 3.5 Torn reads, lost increments, non-atomic snapshots
 
@@ -867,9 +895,16 @@ confidence means knowing the contract's edges, because these are the things **yo
 code can do to violate them:
 
 1. **Detached work races the emit.** Fire-and-forget (`GlobalScope.launch`, un-joined
-   pool tasks) contributions may or may not land — snapshot cutoff, silently. If a field
-   must appear, join before the block returns. Audit for `GlobalScope` and un-awaited
-   `@Async` in code that contributes fields.
+   pool tasks) contributions may or may not land — snapshot cutoff. If a field must
+   appear, join before the block returns. Audit for `GlobalScope` and un-awaited
+   `@Async` in code that contributes fields. This is no longer *silent* if you opt in:
+   a write arriving through a captured context after emit bumps
+   `canonical_log_late_write_count`, WARNs once per unit, and fires
+   `CanonicalLog.onLateWrite`; one that finds nothing bound fires
+   `CanonicalLog.onUnboundContribution` (§3.2). The counter is the one `canonical_log_*`
+   marker you will never see *on a line* — by definition it is written after
+   serialization — so the operator-facing signal is the WARN and the test-facing one is
+   the hook.
 2. **Custom executor paths need the wrapper — at the right place.** The coroutine element
    covers coroutines; plain pools need `propagatingCanonicalContext()` *on the submitting
    thread where the unit is active*. Wrapping a pool whose submissions happen on
@@ -879,7 +914,9 @@ code can do to violate them:
 3. **The open/close scope shifts invariants to you.** `openCanonicalWorkUnit` /
    `CanonicalWorkUnitScope` requires: unbind exactly once, in a `finally`, *on the
    opening thread*; enrich before emit, each at most once; emit-exactly-once guarded by
-   CAS if your terminal callbacks can race. Use the closure forms unless you genuinely
+   CAS if your terminal callbacks can race. The scope's internal guards (§3.4) degrade a
+   repeat call to a no-op plus a WARN rather than a duplicate line or a clobbered
+   binding, but they are a backstop, not the contract. Use the closure forms unless you genuinely
    can't; if you write a new integration, crib from `runCanonicalHttpRequest` in
    `canonical-log-servlet`.
 4. **Adapters and contributors must not throw** — the guards are a backstop that records
@@ -896,10 +933,15 @@ code can do to violate them:
    for the inner switches — the documented wrong tool. Suspend code gets
    `withCanonicalLog` or `withCanonicalCoroutineContext`.
 
-None of these fail loudly. That's the honest cost of "telemetry never fails the
-operation": the failure mode of misuse is a quietly thinner or oddly-shaped line, so the
-diagnostics fields in item 5 and the WARN channel in item 4 are worth wiring into a
-dashboard from day one.
+None of these fail loudly *in production*. That's the honest cost of "telemetry never
+fails the operation": the failure mode of misuse is a quietly thinner or oddly-shaped
+line, so the diagnostics fields in item 5 and the WARN channel in item 4 are worth
+wiring into a dashboard from day one. Items 1 and 2 — the propagation mistakes, the
+likeliest of the set — additionally have a *test-time* strict mode: wrap a suite in
+`failOnLostContributions { }` from `canonical-log-test` and a contribution that would
+have quietly gone nowhere becomes an assertion failure naming the field. It is off by
+default and costs a bound contribution nothing, so there is no reason not to turn it on
+in CI.
 
 ---
 

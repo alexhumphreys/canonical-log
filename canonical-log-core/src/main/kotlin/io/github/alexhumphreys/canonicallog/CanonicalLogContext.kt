@@ -1,15 +1,56 @@
 package io.github.alexhumphreys.canonicallog
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
     public val workUnit: WorkUnit,
 ) {
     internal val fields: ConcurrentHashMap<String, Any> = ConcurrentHashMap()
 
+    /**
+     * Set once the line has been published (by `safeEmit`, after the writer took its snapshot).
+     * Writes arriving afterwards still succeed — the map is a valid object and refusing the
+     * write buys nothing while risking a surprise mid-teardown — but they are lost, so they are
+     * counted and warned about instead of vanishing. Read on the write path only.
+     */
+    @Volatile
+    internal var finalized: Boolean = false
+
+    /** One WARN per context, however many late writes arrive. */
+    private val lateWriteWarned = AtomicBoolean(false)
+
     public fun put(key: String, value: Any?) {
         if (value == null) return
+        if (finalized) recordLateWrite(key)
         fields[key] = value
+    }
+
+    /**
+     * Report a write that arrived after the line was emitted: count it on the (now pointless)
+     * map, WARN once, and notify [CanonicalLog.onLateWrite] if a diagnostic hook is installed.
+     *
+     * The counter lands on a map nobody will serialize again — that is the honest limit here.
+     * The operator-facing signal is the WARN; the test-facing one is the hook (see
+     * `canonical-log-test`'s `failOnLateWrites`). Deliberately no attempt to re-emit or amend
+     * the line: a second line for the same work unit is worse than a missing field.
+     */
+    private fun recordLateWrite(key: String) {
+        // Raw write, not increment(): the counter is itself a post-finalize write, and routing
+        // it back through put/increment would recurse.
+        fields.merge(CanonicalFields.LATE_WRITE_COUNT, 1L) { existing, _ ->
+            if (existing is Long) existing + 1L else existing
+        }
+        if (lateWriteWarned.compareAndSet(false, true)) {
+            libraryLogger.warn(
+                "contribution to {} arrived after the canonical line for work unit {} was emitted; " +
+                    "it is lost (later late writes are counted in {} but not warned about again)",
+                key,
+                workUnit.id,
+                CanonicalFields.LATE_WRITE_COUNT,
+            )
+        }
+        CanonicalLog.onLateWrite?.invoke(workUnit.id, key)
     }
 
     /**
@@ -38,6 +79,7 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
      */
     @JvmOverloads
     public fun increment(key: String, by: Long = 1L) {
+        if (finalized) recordLateWrite(key)
         // The remapping function is the stateless singleton [SumLongs] rather than a lambda,
         // and the conflict is read off merge's *return* value rather than out of a captured
         // local. A lambda that captured a `var` would allocate two objects on every increment
@@ -52,9 +94,12 @@ public class CanonicalLogContext @DelicateCanonicalLogApi public constructor(
         // it returns is the conflicting one whose type gets reported.
         val merged = fields.merge(key, by, SumLongs)
         if (merged !is Long) {
-            put(CanonicalFields.TYPE_CONFLICT, true)
-            put(CanonicalFields.TYPE_CONFLICT_KEY, key)
-            put(CanonicalFields.TYPE_CONFLICT_TYPE, merged?.let { it::class.qualifiedName } ?: "unknown")
+            // Raw writes, not put(): these markers are the library reporting on the increment
+            // above, not fresh contributions — routing them through put() would count one
+            // misuse as several late writes once the context is finalized.
+            fields[CanonicalFields.TYPE_CONFLICT] = true
+            fields[CanonicalFields.TYPE_CONFLICT_KEY] = key
+            fields[CanonicalFields.TYPE_CONFLICT_TYPE] = merged?.let { it::class.qualifiedName } ?: "unknown"
         }
     }
 

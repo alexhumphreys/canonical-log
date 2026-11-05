@@ -4,13 +4,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Logger for the library's own failure reporting (a throwing emit or enrich). Named
  * after the package rather than a class so adopters can target it with one config line.
  */
-private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
+internal val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.canonicallog")
 
 /**
  * The hand-off the entry point uses to publish the finalized canonical line.
@@ -32,7 +33,13 @@ private val libraryLogger = LoggerFactory.getLogger("io.github.alexhumphreys.can
  * nested, nothing at top level. Consequences, pinned by `LifecycleReentrancyTest`:
  *  - Ambient writes ([CanonicalLog.put]/`increment`) inside emit never land on the line
  *    being emitted. At top level they are no-ops; inside a nested unit's emit they land
- *    on the *enclosing* unit — either way, discouraged.
+ *    on the *enclosing* unit — either way, discouraged. A top-level no-op here does fire
+ *    [CanonicalLog.onUnboundContribution] when that diagnostic hook is installed: it reports
+ *    the mechanism (nothing was bound) and contributing from a sink is discouraged anyway, so
+ *    a test opting into strictness hears about it.
+ *  - A write made through a *captured* [CanonicalLogContext] reference after emit returns is
+ *    counted as a late write ([CanonicalFields.LATE_WRITE_COUNT], one WARN per unit,
+ *    [CanonicalLog.onLateWrite]).
  *  - A work unit opened inside emit nests under the enclosing unit (top-level if none),
  *    never under the finalized one, and emits its own line normally.
  *  - Logging through an appender that itself contributes canonical fields cannot recurse:
@@ -298,6 +305,14 @@ public suspend fun <R> withCanonicalCoroutineContext(
  *     may fire after a timeout). Guard the finalize step with an [java.util.concurrent.atomic
  *     .AtomicBoolean] `compareAndSet` — the internal `CanonicalLogAsyncEmitListener` in
  *     `canonical-log-servlet` is the worked example.
+ *
+ *     The scope carries its **own** `compareAndSet` backstop for [emit] and [unbind]: a repeat
+ *     call is a no-op plus one WARN to the `io.github.alexhumphreys.canonicallog` logger, so a
+ *     misbehaving integration gets one line and a warning rather than a duplicate line or a
+ *     clobbered thread binding ([enrich] after [emit] warns too, and still runs). That is
+ *     defence in depth, not a replacement for your guard — yours also gates the listener-side
+ *     work around the finalize step, and only you can decide which of two racing callbacks
+ *     should win.
  *  4. **If none of that applies, use [withCanonicalLogBlocking].** The closure form binds,
  *     runs the block, classifies the outcome, enriches, unbinds in `finally`, and emits once —
  *     in the right order, on the right thread — so you don't have to.
@@ -314,6 +329,17 @@ public class CanonicalWorkUnitScope internal constructor(
     private val previousMdc: String?,
     private val startNs: Long,
 ) {
+    // Defence in depth for invariants 1-3 above, which stay the *caller's* contract: getting
+    // them wrong is silent and hard to attribute (duplicate lines double-count dashboards; a
+    // second unbind restores a stale binding over whatever is now bound), so a repeat call is
+    // dropped with one WARN instead. Two atomics per work unit is noise next to the UUID and
+    // ConcurrentHashMap a unit already allocates. This is a backstop, not a licence: an
+    // integration whose terminal callbacks can race still needs its own compareAndSet, because
+    // that guard also gates the listener-side work around emit (the internal
+    // CanonicalLogAsyncEmitListener in canonical-log-servlet is the worked example).
+    private val emitted = AtomicBoolean(false)
+    private val unbound = AtomicBoolean(false)
+
     /**
      * Classify how the work terminated, using elapsed time since [openCanonicalWorkUnit]:
      * `null` → [Outcome.Completed], a [CancellationException] → [Outcome.Cancelled], else
@@ -326,18 +352,49 @@ public class CanonicalWorkUnitScope internal constructor(
      * `canonical_log_enrich_error*` (see [WorkUnitAdapter]). Telemetry never fails the work.
      */
     public fun <T> enrich(adapter: WorkUnitAdapter<T>, input: T, outcome: Outcome) {
+        // Enriching after emit is a caller bug worth surfacing: the contribution lands on the
+        // live context but missed the line that was already published. Run it anyway — the
+        // guard reports, it doesn't police.
+        if (emitted.get()) {
+            libraryLogger.warn(
+                "enrich called after emit for work unit {}; its fields missed the canonical line",
+                context.workUnit.id,
+            )
+        }
         runEnrich(adapter, context, input, outcome)
     }
 
-    /** Restore the threadlocal + MDC binding displaced at [openCanonicalWorkUnit]. Call exactly once. */
+    /**
+     * Restore the threadlocal + MDC binding displaced at [openCanonicalWorkUnit]. Call exactly
+     * once, on the opening thread. A second call is dropped with a WARN rather than restoring
+     * the stale binding again over whatever is bound by then.
+     */
     @OptIn(DelicateCanonicalLogApi::class)
     public fun unbind() {
+        if (!unbound.compareAndSet(false, true)) {
+            libraryLogger.warn(
+                "unbind called more than once for work unit {}; ignored (restoring again would clobber the current binding)",
+                context.workUnit.id,
+            )
+            return
+        }
         threadLocalContext.set(previousContext)
         CanonicalLogMdc.restore(previousMdc)
     }
 
-    /** Publish the finalized line via [emit], swallowing and warning on a throwing emit (see [EmitFn]). */
+    /**
+     * Publish the finalized line via [emit], swallowing and warning on a throwing emit (see
+     * [EmitFn]). Call exactly once: a second call is dropped with a WARN rather than emitting a
+     * duplicate line.
+     */
     public fun emit(emit: EmitFn) {
+        if (!emitted.compareAndSet(false, true)) {
+            libraryLogger.warn(
+                "emit called more than once for work unit {}; duplicate canonical line dropped",
+                context.workUnit.id,
+            )
+            return
+        }
         safeEmit(emit, context)
     }
 }
@@ -466,6 +523,12 @@ private fun safeEmit(emit: EmitFn, ctx: CanonicalLogContext) {
             ctx.workUnit.id,
             emitEx,
         )
+    } finally {
+        // The writers took their snapshots inside emit(); anything arriving from here on missed
+        // the line, so mark the context finalized and let those writes be counted/warned about
+        // rather than vanishing (todo 049). Set even when emit threw — the line is gone either
+        // way, so a later write is just as lost.
+        ctx.finalized = true
     }
 }
 
