@@ -37,7 +37,6 @@ After the track: [026](026-canonical-log-kafka.md) (Kafka) and
 both are long-standing v0.2 candidates from docs/CLAUDE.md, now spec'd — followed by
 [030](030-canonical-log-sqs.md) (SQS adapter, small, sits on 026's constants) and
 [031](031-canonical-log-jobrunr.md) (JobRunr background jobs).
-[028](028-json-canonical-line-writer.md) is small and slots anywhere;
 [029](029-canonical-log-grpc.md) is demand-driven — leave it until a gRPC adopter
 materializes.
 
@@ -54,7 +53,6 @@ materializes.
 | [024](024-graduate-open-close-and-consumer-recipe.md) | Open/close graduation + consumer recipe | Stabilize `openCanonicalWorkUnit`/`CanonicalWorkUnitScope`; broker-agnostic message-consumer recipe with pinned examples |
 | [026](026-canonical-log-kafka.md) | `canonical-log-kafka` | Consumer work-unit adapter + capture-at-send producer decorator (v0.2 candidate, spec'd) |
 | [027](027-trace-correlation-contributor.md) | Trace correlation | `OtelSeedingAdapter` + core `MdcSeedingAdapter` — `trace_id`/`span_id` via the seed hook |
-| [028](028-json-canonical-line-writer.md) | `JsonCanonicalLineWriter` | Dependency-free typed JSON sink in core (`canonicalLineJson` serializer + writer) |
 | [029](029-canonical-log-grpc.md) | `canonical-log-grpc` | Server interceptor entry point + client contributor (demand-driven) |
 | [030](030-canonical-log-sqs.md) | `canonical-log-sqs` | `SqsMessageWorkUnitAdapter` for poll-loop consumers (adapter only; loop stays recipe) |
 | [031](031-canonical-log-jobrunr.md) | `canonical-log-jobrunr` | `JobServerFilter`-based transparent work units per job processing attempt |
