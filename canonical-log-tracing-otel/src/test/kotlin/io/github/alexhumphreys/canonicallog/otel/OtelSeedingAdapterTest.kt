@@ -10,7 +10,9 @@ import io.github.alexhumphreys.canonicallog.withCanonicalLogBlocking
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.maps.shouldNotContainKey
 import io.kotest.matchers.shouldBe
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
@@ -30,7 +32,11 @@ class OtelSeedingAdapterTest : DescribeSpec({
         override fun enrich(ctx: CanonicalLogContext, input: Unit, outcome: Outcome) {}
     }
 
-    val tracerProvider = SdkTracerProvider.builder().build()
+    // Since OTel 1.67 a provider with no span processor hands out non-recording spans with an
+    // invalid (all-zeroes) context, so register one to get real ids.
+    val tracerProvider = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(InMemorySpanExporter.create()))
+        .build()
     val tracer = tracerProvider.get("canonical-log-tracing-otel-test")
 
     fun runUnit(block: (CanonicalLogContext) -> Unit = {}): Map<String, Any> {

@@ -366,7 +366,6 @@ Ordered roughly by likely usefulness:
 - Cross-service propagation (pluggable propagator interface, W3C `traceparent` default, custom `request_chain` field).
 - Custom backpressure-aware appender (separate from the app's main appender, block-not-drop default, bounded-blocking with degraded local-file fallback).
 - Startup heartbeat endpoint (synthetic self-request through full filter chain to validate wiring at boot).
-- Maven Central publishing.
 - Arrow `Either` / KEEP-0441 integration helpers as separate modules.
 - `canonical-log-otel` sink module.
 

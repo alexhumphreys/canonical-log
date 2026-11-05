@@ -5,7 +5,8 @@ bundle:
 
 ```kotlin
 dependencies {
-    implementation("io.github.alexhumphreys:canonical-log-dropwizard:0.1.0-SNAPSHOT")
+    // Version comes from canonical-log-bom — see the top-level README's quickstart.
+    implementation("io.github.alexhumphreys:canonical-log-dropwizard")
 }
 ```
 

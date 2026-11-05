@@ -1,10 +1,11 @@
 # canonical-log - wide events for Kotlin and Spring Boot
 
 [![CI](https://github.com/alexhumphreys/canonical-log/actions/workflows/ci.yml/badge.svg)](https://github.com/alexhumphreys/canonical-log/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.alexhumphreys/canonical-log-bom)](https://central.sonatype.com/namespace/io.github.alexhumphreys)
 
 Stripe-style [canonical log lines](https://stripe.com/blog/canonical-log-lines) for JVM services. One wide, structured log line per unit of work, contributed to mechanically by HTTP, JDBC, and OkHttp instrumentation, augmented explicitly by handler code via a tiny API.
 
-> Status: **0.1, very experimental.** Mostly me playing with Claude Code.
+> Status: **0.x, very experimental.** Mostly me playing with Claude Code.
 
 ## What it is
 
@@ -21,12 +22,14 @@ Stripe-style [canonical log lines](https://stripe.com/blog/canonical-log-lines) 
 
 ## Quickstart
 
+Every module is published to [Maven Central](https://central.sonatype.com/namespace/io.github.alexhumphreys) under `io.github.alexhumphreys`, so `mavenCentral()` is the only repository you need.
+
 ```kotlin
 // build.gradle.kts
 dependencies {
     // The BOM pins every canonical-log module to one version, so the modules below
     // (and any you add later) are declared without a version of their own.
-    implementation(platform("io.github.alexhumphreys:canonical-log-bom:0.1.0-SNAPSHOT"))
+    implementation(platform("io.github.alexhumphreys:canonical-log-bom:0.16.3"))
 
     implementation("io.github.alexhumphreys:canonical-log-spring-boot-starter")
 }
@@ -208,7 +211,7 @@ See [`samples/spring-demo`](samples/spring-demo/README.md) — runs end-to-end o
 
 ## Roadmap (deferred from v0.1)
 
-Retry/circuit-breaker contributor, LaunchDarkly contributor, WebFlux/Reactor support, Arrow `Either` / rich-errors integration, sampling policies, redaction hooks, configuration DSL, cross-service propagation, Maven Central publishing. The v0.1 POC is for validating the kernel; everything else lands as feedback informs design.
+Retry/circuit-breaker contributor, LaunchDarkly contributor, WebFlux/Reactor support, Arrow `Either` / rich-errors integration, sampling policies, redaction hooks, configuration DSL, cross-service propagation. The v0.1 POC is for validating the kernel; everything else lands as feedback informs design.
 
 ## Testing
 

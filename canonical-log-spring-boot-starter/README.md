@@ -5,7 +5,8 @@ per HTTP request, with the JDBC and OkHttp contributor starters pulled in transi
 
 ```kotlin
 dependencies {
-    implementation("io.github.alexhumphreys:canonical-log-spring-boot-starter:0.1.0-SNAPSHOT")
+    // Version comes from canonical-log-bom — see the top-level README's quickstart.
+    implementation("io.github.alexhumphreys:canonical-log-spring-boot-starter")
 }
 ```
 
