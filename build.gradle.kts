@@ -268,9 +268,9 @@ subprojects {
         }
 
         // Binary-compatibility gate: each module commits its public ABI as a dump under
-        // api/, and `check` fails when the compiled ABI drifts from it. Every merged PR is a
-        // release (and every `feat:` a minor bump), so nothing else would notice an accidental
-        // removal or signature change before it ships to Maven Central. An intended change is
+        // api/, and `check` fails when the compiled ABI drifts from it. A Maven Central release
+        // is permanent, and nothing else would notice an accidental removal or signature
+        // change before it ships. An intended change is
         // `./gradlew updateKotlinAbi`, and the dump diff shows up in review.
         @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
         extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
