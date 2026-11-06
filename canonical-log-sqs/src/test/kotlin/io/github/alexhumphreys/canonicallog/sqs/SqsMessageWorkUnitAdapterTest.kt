@@ -8,6 +8,7 @@ import io.kotest.matchers.maps.shouldNotContainKey
 import io.kotest.matchers.shouldBe
 import software.amazon.awssdk.services.sqs.model.Message
 import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName
+import java.util.UUID
 
 /**
  * Pins `SqsMessageWorkUnitAdapter` by driving a `Message.builder()` message (pure data — no
@@ -66,6 +67,15 @@ class SqsMessageWorkUnitAdapterTest : DescribeSpec({
             val fields = run(adapter, message())
 
             fields["messaging_destination_name"] shouldBe "orders"
+        }
+
+        it("falls back to a random work-unit id for a message with no id, omitting messaging_message_id") {
+            // describe is unguarded in core, so this used to NPE out of the lifecycle and fail the
+            // handler before it ran (found by the todo 048 adapter contract).
+            val fields = run(SqsMessageWorkUnitAdapter("orders"), Message.builder().build())
+
+            UUID.fromString(fields["work_unit_id"] as String)
+            fields shouldNotContainKey "messaging_message_id"
         }
 
         it("emits the receive count when the ApproximateReceiveCount attribute is present") {

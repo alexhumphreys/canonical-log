@@ -1,3 +1,8 @@
+public final class io/github/alexhumphreys/canonicallog/test/AdapterContractKt {
+	public static final fun adapterContract (Ljava/lang/String;Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/util/Map;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;)Ljava/util/List;
+	public static synthetic fun adapterContract$default (Ljava/lang/String;Lio/github/alexhumphreys/canonicallog/WorkUnitAdapter;Ljava/util/Map;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;ILjava/lang/Object;)Ljava/util/List;
+}
+
 public final class io/github/alexhumphreys/canonicallog/test/CaptureCanonicalLineKt {
 	public static final fun captureCanonicalLine (Lkotlin/jvm/functions/Function3;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun captureCanonicalLineBlocking (Lkotlin/jvm/functions/Function1;)Lio/github/alexhumphreys/canonicallog/test/CapturedCanonicalLine;
@@ -10,6 +15,25 @@ public final class io/github/alexhumphreys/canonicallog/test/CapturedCanonicalLi
 	public final fun getOutcome ()Lio/github/alexhumphreys/canonicallog/Outcome;
 	public final fun getResult ()Ljava/lang/Object;
 	public final fun getWorkUnit ()Lio/github/alexhumphreys/canonicallog/WorkUnit;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/ContractCase {
+	public final fun getName ()Ljava/lang/String;
+	public final fun run ()V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/ContractScenario {
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/ContributorContractKt {
+	public static final fun contributorContract (Ljava/lang/String;Lkotlin/jvm/functions/Function0;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;Lio/github/alexhumphreys/canonicallog/test/ContractScenario;Ljava/util/Map;)Ljava/util/List;
+	public static synthetic fun contributorContract$default (Ljava/lang/String;Lkotlin/jvm/functions/Function0;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;Lio/github/alexhumphreys/canonicallog/test/ContractScenario;Ljava/util/Map;ILjava/lang/Object;)Ljava/util/List;
+	public static final fun failingScenario (Lkotlin/reflect/KClass;Ljava/util/Map;Lkotlin/jvm/functions/Function0;)Lio/github/alexhumphreys/canonicallog/test/ContractScenario;
+	public static synthetic fun failingScenario$default (Lkotlin/reflect/KClass;Ljava/util/Map;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/test/ContractScenario;
+	public static final fun runAll (Ljava/util/List;)V
+	public static final fun scenario (Ljava/util/Map;Lkotlin/jvm/functions/Function0;)Lio/github/alexhumphreys/canonicallog/test/ContractScenario;
+	public static synthetic fun scenario$default (Ljava/util/Map;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/github/alexhumphreys/canonicallog/test/ContractScenario;
 }
 
 public final class io/github/alexhumphreys/canonicallog/test/LostCanonicalContributionException : java/lang/AssertionError {
@@ -42,6 +66,13 @@ public final class io/github/alexhumphreys/canonicallog/test/LostContribution$Un
 	public fun getKey ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/alexhumphreys/canonicallog/test/NegativeAssertionsKt {
+	public static final fun hasNoField (Lio/github/alexhumphreys/canonicallog/test/CapturedCanonicalLine;Ljava/lang/String;)V
+	public static final fun hasNoField (Ljava/util/Map;Ljava/lang/String;)V
+	public static final fun hasNoFieldMatching (Lio/github/alexhumphreys/canonicallog/test/CapturedCanonicalLine;Lkotlin/text/Regex;)V
+	public static final fun hasNoFieldMatching (Ljava/util/Map;Lkotlin/text/Regex;)V
 }
 
 public final class io/github/alexhumphreys/canonicallog/test/RecordingCanonicalAppender : java/lang/AutoCloseable {

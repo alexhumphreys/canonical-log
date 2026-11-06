@@ -920,7 +920,10 @@ code can do to violate them:
    can't; if you write a new integration, crib from `runCanonicalHttpRequest` in
    `canonical-log-servlet`.
 4. **Adapters and contributors must not throw** — the guards are a backstop that records
-   the failure, not a license. And a throwing **emit** loses the line entirely (one WARN
+   the failure, not a license. The per-module enforcement is `canonical-log-test`'s contract
+   harness (`contributorContract` / `adapterContract`). Every shipped contributor and adapter
+   runs it against no-unit-bound, type-conflict and hostile-input cases, and the harness counts
+   a fired backstop marker as a failure. A new integration should run it too. And a throwing **emit** loses the line entirely (one WARN
    remains). Watch the `io.github.alexhumphreys.canonicallog` logger in production; those
    WARNs are your telemetry's own error channel.
 5. **Type discipline per key**: an incremented key must only ever be incremented; keys
